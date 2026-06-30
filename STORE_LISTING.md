@@ -121,15 +121,16 @@ This extension only configures Chrome to use the proxy you provide. It does not 
 | Asset | File | Size | Use in Chrome Web Store |
 |---|---|---|---|
 | Promo banner | `store-assets/promo-tile.png` | 1024×409 | Optional marketing / GitHub social preview |
-| Main form screenshot | `store-assets/screenshot-main-form.png` | 729×1024 | Upload as store screenshot #1 |
-| Disclaimer screenshot | `store-assets/screenshot-disclaimer.png` | 764×604 | Upload as store screenshot #2 |
+| Main form screenshot | `store-assets/screenshot-main-form-1280x800.png` | 1280×800 | Upload as store screenshot #1 |
+| Disclaimer screenshot | `store-assets/screenshot-disclaimer-1280x800.png` | 1280×800 | Upload as store screenshot #2 |
+| Source captures | `store-assets/screenshot-main-form.png`, `screenshot-disclaimer.png` | original | Keep for future edits only |
 
-Recommended store screenshot size is **1280×800** or **640×400**. Current PNGs are ready to upload; if the dashboard rejects the size, resize or pad them before submission.
+Upload the `*-1280x800.png` files in the Chrome Web Store dashboard.
 
 ## Screenshot captions
 
-1. `screenshot-main-form.png` — Enter your proxy settings locally in Chrome and connect with one click.
-2. `screenshot-disclaimer.png` — Review the disclaimer and user responsibility notice before first use.
+1. `screenshot-main-form-1280x800.png` — Enter your proxy settings locally in Chrome and connect with one click.
+2. `screenshot-disclaimer-1280x800.png` — Review the disclaimer and user responsibility notice before first use.
 
 ## Prohibited marketing phrases
 
