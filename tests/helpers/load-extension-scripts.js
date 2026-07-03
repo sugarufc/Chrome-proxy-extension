@@ -88,6 +88,7 @@ function createChromeMock({ local = {}, session = {} } = {}) {
     runtime: {
       lastError: null,
       onInstalled: createEventMock(),
+      onMessage: createEventMock(),
       onStartup: createEventMock(),
     },
     proxy: {
