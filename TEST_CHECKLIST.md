@@ -13,7 +13,7 @@ Use this checklist before submitting to the Chrome Web Store.
 - [ ] HTTP proxy without auth connects successfully
 - [ ] HTTP proxy with auth connects successfully
 - [ ] HTTPS proxy with auth connects successfully
-- [ ] SOCKS5 proxy with auth connects successfully
+- [ ] SOCKS5 proxy with auth is blocked with a clear Chrome limitation message
 - [ ] Wrong password shows a safe error and does not log credentials
 - [ ] Wrong host shows a safe error
 - [ ] Wrong port shows a safe error

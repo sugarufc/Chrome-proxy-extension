@@ -6,43 +6,26 @@
     buildProfileFromFields,
     validatePasswordForProfile,
     validateChromeProxySupport,
-    parseDirectConnectList,
-    buildProxyConfig,
-    sanitizeParsedProxy,
     sanitizeErrorMessage,
   } = ProxyShared;
 
-  function chromeCall(apiCall) {
+  function sendCommand(command, payload = {}) {
     return new Promise((resolve, reject) => {
-      apiCall(() => {
+      chrome.runtime.sendMessage({ command, ...payload }, (response) => {
         const runtimeError = chrome.runtime.lastError;
         if (runtimeError) {
           reject(new Error(runtimeError.message));
           return;
         }
-        resolve();
+
+        if (!response || response.ok !== true) {
+          reject(new Error(response && response.error ? response.error : "Proxy command failed."));
+          return;
+        }
+
+        resolve(response);
       });
     });
-  }
-
-  function setActionIcon(active) {
-    const suffix = active ? "-on" : "";
-
-    return Promise.all([
-      chromeCall((done) => chrome.action.setBadgeText({ text: "" }, done)),
-      chromeCall((done) =>
-        chrome.action.setIcon(
-          {
-            path: {
-              16: `icons/icon16${suffix}.png`,
-              48: `icons/icon48${suffix}.png`,
-              128: `icons/icon128${suffix}.png`,
-            },
-          },
-          done,
-        ),
-      ),
-    ]);
   }
 
   function attachPopup() {
@@ -70,6 +53,7 @@
     const socks5AuthNotice = document.getElementById("socks5AuthNotice");
 
     let disclaimerAccepted = false;
+    let savedPasswordValue = "";
 
     function updateSocks5Notice() {
       if (!socks5AuthNotice) {
@@ -172,18 +156,22 @@
       }
     }
 
-    async function applyStoredStatus(state) {
-      const sessionConnected = await ProxyStorage.isSessionConnected();
+    function applyStatusResponse(response) {
+      const state = response.state || {};
+      const sessionConnected = Boolean(response.sessionConnected);
 
-      if (state.active && !sessionConnected) {
-        try {
-          await chromeCall((done) => chrome.proxy.settings.clear({ scope: "regular" }, done));
-        } catch (_error) {
-          // Ignore cleanup errors for stale active state.
-        }
-        await ProxyStorage.setLocal({ active: false, lastProxyError: "" });
-        await setActionIcon(false);
-        setStatus("warning", "Session expired. Click Connect to use the proxy again.");
+      if (response.status === "warning") {
+        setStatus("warning", response.message);
+        return;
+      }
+
+      if (response.status === "connected") {
+        setStatus("connected");
+        return;
+      }
+
+      if (response.status === "disconnected") {
+        setStatus("disconnected");
         return;
       }
 
@@ -214,21 +202,17 @@
       connectButton.disabled = false;
     }
 
-    async function loadSavedForm(state) {
+    function loadSavedForm(response) {
+      const state = response.state || {};
       if (state.proxyProfile) {
         fillFormFromProfile(state.proxyProfile);
       }
 
       rememberPassword.checked = Boolean(state.rememberPassword);
+      savedPasswordValue = response.password || "";
 
-      const sessionPassword = await ProxyStorage.resolveSessionPassword();
-      if (sessionPassword) {
-        proxyPassword.value = sessionPassword;
-        return;
-      }
-
-      if (state.rememberPassword && state.savedPassword) {
-        proxyPassword.value = state.savedPassword;
+      if (savedPasswordValue) {
+        proxyPassword.value = savedPasswordValue;
       }
     }
 
@@ -238,7 +222,7 @@
       }
 
       if (rememberPassword.checked) {
-        return ProxyStorage.resolveSavedPassword();
+        return savedPasswordValue;
       }
 
       return "";
@@ -268,26 +252,20 @@
         return;
       }
 
-      const directConnectList = parseDirectConnectList(DEFAULT_DIRECT_CONNECT_LIST);
-      const config = buildProxyConfig(parsed.profile, directConnectList);
-
       setBusy(true);
       try {
-        await chromeCall((done) => chrome.proxy.settings.set({ value: config, scope: "regular" }, done));
-        await ProxyStorage.saveConnection({
+        const response = await sendCommand("connect", {
           profile: parsed.profile,
           password,
           rememberPassword: rememberPassword.checked,
           directConnectList: DEFAULT_DIRECT_CONNECT_LIST,
-          parsedProxy: sanitizeParsedProxy(parsed.profile, Boolean(password)),
         });
-        await setActionIcon(true);
         if (password) {
           proxyPassword.value = password;
+          savedPasswordValue = password;
         }
-        setStatus("connected");
+        applyStatusResponse(response);
       } catch (error) {
-        await ProxyStorage.setLocal({ active: false, lastError: sanitizeErrorMessage(error.message) });
         setStatus("error", error.message);
       } finally {
         setBusy(false);
@@ -297,16 +275,14 @@
     async function disconnect() {
       setBusy(true);
       try {
-        await chromeCall((done) => chrome.proxy.settings.clear({ scope: "regular" }, done));
         const rememberEnabled = rememberPassword.checked;
-        await ProxyStorage.setDisconnected();
+        const response = await sendCommand("disconnect");
         if (!rememberEnabled) {
           proxyPassword.value = "";
+          savedPasswordValue = "";
         }
-        await setActionIcon(false);
-        setStatus("disconnected");
+        applyStatusResponse(response);
       } catch (error) {
-        await ProxyStorage.setLocal({ lastError: sanitizeErrorMessage(error.message) });
         setStatus("error", error.message);
       } finally {
         setBusy(false);
@@ -321,17 +297,15 @@
 
       setBusy(true);
       try {
-        await chromeCall((done) => chrome.proxy.settings.clear({ scope: "regular" }, done));
-        await ProxyStorage.forgetAllData();
+        const response = await sendCommand("forgetAll");
         fillFormFromProfile({ scheme: "http", host: "", port: "", username: "" }, { password: "" });
         rememberPassword.checked = false;
-        await setActionIcon(false);
+        savedPasswordValue = "";
         showDisclaimer();
         disclaimerCheckbox.checked = false;
         acceptDisclaimerButton.disabled = true;
-        setStatus("disconnected");
+        applyStatusResponse(response);
       } catch (error) {
-        await ProxyStorage.setLocal({ lastError: sanitizeErrorMessage(error.message) });
         setStatus("error", error.message);
       } finally {
         setBusy(false);
@@ -354,7 +328,7 @@
         return;
       }
 
-      await ProxyStorage.acceptDisclaimer();
+      await sendCommand("acceptDisclaimer");
       showMainForm();
     });
 
@@ -366,23 +340,42 @@
     proxyUsername.addEventListener("input", updateSocks5Notice);
     proxyPassword.addEventListener("input", updateSocks5Notice);
 
-    ProxyStorage.configureTrustedStorageAccess().then(() =>
-      ProxyStorage.getFullState().then(async (state) => {
+    function refreshStatus() {
+      sendCommand("getStatus")
+        .then((response) => {
+          const state = response.state || {};
+          if (!state.disclaimerAccepted) {
+            showDisclaimer();
+            return;
+          }
+
+          applyStatusResponse(response);
+        })
+        .catch((error) => {
+          setStatus("error", error.message);
+        });
+    }
+
+    sendCommand("getStatus")
+      .then((response) => {
+        const state = response.state || {};
         if (!state.disclaimerAccepted) {
           showDisclaimer();
           return;
         }
 
         showMainForm();
-        await loadSavedForm(state);
+        loadSavedForm(response);
         updateSocks5Notice();
-        await applyStoredStatus(state);
-      }),
-    );
+        applyStatusResponse(response);
+      })
+      .catch((error) => {
+        setStatus("error", error.message);
+      });
 
     chrome.storage.onChanged.addListener((changes, areaName) => {
       if (areaName === "session" && changes.sessionConnected) {
-        ProxyStorage.getFullState().then((state) => applyStoredStatus(state));
+        refreshStatus();
         return;
       }
 
@@ -396,7 +389,7 @@
       }
 
       if (changes.lastProxyError || changes.active) {
-        ProxyStorage.getFullState().then((state) => applyStoredStatus(state));
+        refreshStatus();
       }
     });
   }

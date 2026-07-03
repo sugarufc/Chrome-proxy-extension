@@ -6,7 +6,16 @@ const AUTH_RETRY_LIMIT = 2;
 const AUTH_ATTEMPT_MAX_ENTRIES = 200;
 const AUTH_ATTEMPT_TTL_MS = 5 * 60 * 1000;
 const authAttemptsByRequest = new Map();
-const { DEFAULT_DIRECT_CONNECT_LIST, parseDirectConnectList, buildProxyConfig, sanitizeErrorMessage } = ProxyShared;
+const {
+  DEFAULT_DIRECT_CONNECT_LIST,
+  buildProfileFromFields,
+  validatePasswordForProfile,
+  validateChromeProxySupport,
+  parseDirectConnectList,
+  buildProxyConfig,
+  sanitizeParsedProxy,
+  sanitizeErrorMessage,
+} = ProxyShared;
 
 function proxySettingsSet(config) {
   return new Promise((resolve, reject) => {
@@ -159,6 +168,136 @@ async function migrateLegacyStorage() {
   await ProxyStorage.cleanupLegacySecrets();
 }
 
+async function getStatusPayload(options = {}) {
+  const state = await ProxyStorage.getFullState();
+  const sessionConnected = await ProxyStorage.isSessionConnected();
+  const sessionPassword = sessionConnected ? await ProxyStorage.resolveSessionPassword() : "";
+  const savedPassword = state.rememberPassword && state.savedPassword ? state.savedPassword : "";
+
+  return {
+    state,
+    sessionConnected,
+    password: sessionPassword || savedPassword,
+    status: options.status || "",
+    message: options.message || "",
+  };
+}
+
+async function getCurrentStatus() {
+  await ProxyStorage.configureTrustedStorageAccess();
+  await migrateLegacyStorage();
+
+  const state = await ProxyStorage.getFullState();
+  const sessionConnected = await ProxyStorage.isSessionConnected();
+  if (state.active && !sessionConnected) {
+    try {
+      await proxySettingsClear();
+    } catch (_error) {
+      // Ignore cleanup errors for stale active state.
+    }
+    await ProxyStorage.setLocal({ active: false, lastProxyError: "" });
+    setActionIcon(false);
+    return getStatusPayload({
+      status: "warning",
+      message: "Session expired. Click Connect to use the proxy again.",
+    });
+  }
+
+  setActionIcon(Boolean(state.active && sessionConnected));
+  return getStatusPayload();
+}
+
+async function connectProxy(message) {
+  const profile = buildProfileFromFields(message.profile || {});
+  const password = String(message.password || "");
+  const directConnectList = message.directConnectList || DEFAULT_DIRECT_CONNECT_LIST;
+
+  validatePasswordForProfile(profile, password);
+  validateChromeProxySupport(profile, password);
+
+  const parsedDirectConnectList = parseDirectConnectList(directConnectList);
+  const config = buildProxyConfig(profile, parsedDirectConnectList);
+
+  await proxySettingsSet(config);
+  await ProxyStorage.saveConnection({
+    profile,
+    password,
+    rememberPassword: Boolean(message.rememberPassword),
+    directConnectList,
+    parsedProxy: sanitizeParsedProxy(profile, Boolean(password)),
+  });
+  setActionIcon(true);
+
+  return getStatusPayload({ status: "connected" });
+}
+
+async function disconnectProxy() {
+  await proxySettingsClear();
+  await ProxyStorage.setDisconnected();
+  setActionIcon(false);
+
+  return getStatusPayload({ status: "disconnected" });
+}
+
+async function forgetAllData() {
+  await proxySettingsClear();
+  await ProxyStorage.forgetAllData();
+  setActionIcon(false);
+
+  return getStatusPayload({ status: "disconnected" });
+}
+
+async function acceptDisclaimer() {
+  await ProxyStorage.acceptDisclaimer();
+  return getStatusPayload();
+}
+
+async function runRuntimeCommand(message) {
+  switch (message && message.command) {
+    case "connect":
+      return connectProxy(message);
+    case "disconnect":
+      return disconnectProxy();
+    case "forgetAll":
+      return forgetAllData();
+    case "getStatus":
+      return getCurrentStatus();
+    case "acceptDisclaimer":
+      return acceptDisclaimer();
+    default:
+      throw new Error("Unknown command.");
+  }
+}
+
+function shouldPersistCommandError(command) {
+  return command === "connect" || command === "disconnect" || command === "forgetAll";
+}
+
+function handleRuntimeMessage(message, _sender, sendResponse) {
+  runRuntimeCommand(message)
+    .then((payload) => {
+      sendResponse({ ok: true, ...payload });
+    })
+    .catch(async (error) => {
+      const command = message && message.command;
+      const errorMessage = sanitizeErrorMessage(error && error.message ? error.message : "Proxy command failed.");
+
+      if (shouldPersistCommandError(command)) {
+        await ProxyStorage.setLocal({
+          lastError: errorMessage,
+          ...(command === "connect" ? { active: false } : {}),
+        });
+        if (command === "connect") {
+          setActionIcon(false);
+        }
+      }
+
+      sendResponse({ ok: false, error: errorMessage });
+    });
+
+  return true;
+}
+
 async function restoreProxyForCurrentSession() {
   await migrateLegacyStorage();
 
@@ -206,5 +345,7 @@ chrome.proxy.onProxyError.addListener((details) => {
   const message = details && details.error ? details.error : "Proxy connection error";
   markProxyWarning(message);
 });
+
+chrome.runtime.onMessage.addListener(handleRuntimeMessage);
 
 chrome.webRequest.onAuthRequired.addListener(handleAuthRequired, { urls: ["<all_urls>"] }, ["asyncBlocking"]);
