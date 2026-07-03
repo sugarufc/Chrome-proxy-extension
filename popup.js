@@ -178,7 +178,7 @@
       if (state.active && !sessionConnected) {
         try {
           await chromeCall((done) => chrome.proxy.settings.clear({ scope: "regular" }, done));
-        } catch (error) {
+        } catch (_error) {
           // Ignore cleanup errors for stale active state.
         }
         await ProxyStorage.setLocal({ active: false, lastProxyError: "" });

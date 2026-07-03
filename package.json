@@ -1,0 +1,18 @@
+{
+  "private": true,
+  "name": "proxy-switcher",
+  "version": "2.2.1",
+  "description": "Manifest V3 Chrome proxy switcher.",
+  "scripts": {
+    "lint": "eslint .",
+    "format": "prettier --check .",
+    "format:write": "prettier --write .",
+    "test": "node --test tests/*.test.js",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=shared.js --test-coverage-lines=90 --test-coverage-functions=90 --test-coverage-branches=80 tests/shared.test.js",
+    "build": "./scripts/build.sh"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.2",
+    "prettier": "^3.8.0"
+  }
+}

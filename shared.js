@@ -30,7 +30,7 @@
   function safeDecode(value, label) {
     try {
       return decodeURIComponent(value);
-    } catch (error) {
+    } catch (_error) {
       throw new Error(`Invalid ${label} encoding. URL-encode special characters.`);
     }
   }
@@ -54,7 +54,7 @@
     let url;
     try {
       url = new URL(raw);
-    } catch (error) {
+    } catch (_error) {
       throw new Error("Invalid proxy URL. Check username, password, host, and port.");
     }
 
@@ -77,7 +77,9 @@
     }
 
     if ((url.pathname && url.pathname !== "/") || url.search || url.hash) {
-      throw new Error("Proxy URL must not include path, query, or hash. URL-encode special password characters like @, :, /, #, and ?.");
+      throw new Error(
+        "Proxy URL must not include path, query, or hash. URL-encode special password characters like @, :, /, #, and ?.",
+      );
     }
 
     return {
@@ -90,7 +92,9 @@
   }
 
   function buildProfileFromFields({ scheme, host, port, username }) {
-    const normalizedScheme = String(scheme || "").trim().toLowerCase();
+    const normalizedScheme = String(scheme || "")
+      .trim()
+      .toLowerCase();
     const normalizedHost = String(host || "").trim();
     const normalizedPort = Number(port);
     const normalizedUsername = String(username || "").trim();
