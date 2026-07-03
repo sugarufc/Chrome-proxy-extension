@@ -150,3 +150,58 @@ test("cleanupLegacySecrets migrates legacy proxyUrl and removes legacy secret ke
   assert.equal(chrome.storage.local.data.proxyAuth, undefined);
   assert.equal(chrome.storage.local.data.encryptedPassword, undefined);
 });
+
+test("cleanupLegacySecrets migrates existing proxyProfile to Default profile", async () => {
+  const { chrome, storage } = createStorage({
+    proxyProfile: {
+      scheme: "http",
+      host: "proxy.example.com",
+      port: 8080,
+      username: "user",
+    },
+  });
+
+  await storage.cleanupLegacySecrets();
+
+  assert.deepEqual(plain(chrome.storage.local.data.proxyProfiles), [
+    {
+      id: "default",
+      name: "Default",
+      scheme: "http",
+      host: "proxy.example.com",
+      port: 8080,
+      username: "user",
+    },
+  ]);
+  assert.equal(chrome.storage.local.data.selectedProfileId, "default");
+});
+
+test("saveProfile and deleteProfile manage named proxy profiles", async () => {
+  const { chrome, storage } = createStorage();
+  const profile = {
+    scheme: "http",
+    host: "proxy.example.com",
+    port: 8080,
+    username: "user",
+  };
+
+  const saved = await storage.saveProfile({ name: "Work", profile });
+  assert.equal(saved.name, "Work");
+  assert.equal(chrome.storage.local.data.selectedProfileId, saved.id);
+  assert.equal(chrome.storage.local.data.proxyProfiles.length, 1);
+
+  const updated = await storage.saveProfile({
+    name: "Work",
+    profile: {
+      ...profile,
+      port: 9090,
+    },
+  });
+  assert.equal(updated.id, saved.id);
+  assert.equal(chrome.storage.local.data.proxyProfiles.length, 1);
+  assert.equal(chrome.storage.local.data.proxyProfiles[0].port, 9090);
+
+  await storage.deleteProfile(saved.id);
+  assert.deepEqual(plain(chrome.storage.local.data.proxyProfiles), []);
+  assert.equal(chrome.storage.local.data.selectedProfileId, "");
+});

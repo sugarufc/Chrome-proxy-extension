@@ -32,6 +32,19 @@
 
       <section id="mainSection" class="form" hidden>
         <div class="field">
+          <label for="profileSelect">Profile</label>
+          <select id="profileSelect"></select>
+          <div class="profile-actions">
+            <button id="saveProfileButton" class="button button-secondary button-small" type="button">
+              Save as profile
+            </button>
+            <button id="deleteProfileButton" class="button button-secondary button-small" type="button">
+              Delete profile
+            </button>
+          </div>
+        </div>
+
+        <div class="field">
           <label for="proxyScheme">Proxy type</label>
           <select id="proxyScheme">
             <option value="http">HTTP</option>
