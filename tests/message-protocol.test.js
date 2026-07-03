@@ -7,6 +7,10 @@ const { createChromeMock, createRuntimeContext } = require("./helpers/load-exten
 
 const rootDir = path.resolve(__dirname, "..");
 
+function plain(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
 function loadBackground(local = {}, session = {}) {
   const chrome = createChromeMock({ local, session });
   createRuntimeContext({ chrome, includeStorage: false, includeBackground: true });
@@ -49,12 +53,18 @@ test("background connect message applies proxy settings, icon, and storage state
     },
     password: "secret",
     rememberPassword: false,
-    directConnectList: "localhost, 127.0.0.1, <local>",
+    directConnectList: "localhost\n127.0.0.1, <local>",
   });
 
   assert.equal(response.ok, true);
   assert.equal(chrome.proxy.settings.setCalls.length, 1);
+  assert.deepEqual(plain(chrome.proxy.settings.setCalls[0].value.rules.bypassList), [
+    "localhost",
+    "127.0.0.1",
+    "<local>",
+  ]);
   assert.equal(chrome.storage.local.data.active, true);
+  assert.equal(chrome.storage.local.data.directConnectList, "localhost\n127.0.0.1, <local>");
   assert.equal(chrome.storage.local.data.proxyProfile.host, "proxy.example.com");
   assert.equal(chrome.storage.local.data.savedPassword, undefined);
   assert.equal(chrome.storage.session.data.sessionPassword, "secret");
