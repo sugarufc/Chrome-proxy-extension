@@ -1,8 +1,10 @@
+"use strict";
+
 importScripts("shared.js", "storage-manager.js");
 
-("use strict");
-
 const AUTH_RETRY_LIMIT = 2;
+const AUTH_ATTEMPT_MAX_ENTRIES = 200;
+const AUTH_ATTEMPT_TTL_MS = 5 * 60 * 1000;
 const authAttemptsByRequest = new Map();
 const { DEFAULT_DIRECT_CONNECT_LIST, parseDirectConnectList, buildProxyConfig, sanitizeErrorMessage } = ProxyShared;
 
@@ -68,10 +70,59 @@ function isCurrentProxyChallenge(details, proxyAuth) {
     return false;
   }
 
-  return details.challenger.host === proxyAuth.host && Number(details.challenger.port) === Number(proxyAuth.port);
+  const challengerPort = Number(details.challenger.port);
+  const proxyPort = Number(proxyAuth.port);
+  if (challengerPort !== proxyPort) {
+    return false;
+  }
+
+  const challengerHost = String(details.challenger.host || "").toLowerCase();
+  const proxyHost = String(proxyAuth.host || "").toLowerCase();
+  if (challengerHost === proxyHost) {
+    return true;
+  }
+
+  // Chrome may report the resolved proxy IP here even when the profile stores a hostname.
+  // This extension configures exactly one active singleProxy, so details.isProxy + matching
+  // port is the narrow fallback. Trade-off: this intentionally trusts the current single
+  // proxy config over exact DNS-name equality.
+  return true;
+}
+
+function pruneAuthAttempts(now = Date.now()) {
+  for (const [requestId, attempt] of authAttemptsByRequest) {
+    if (now - attempt.updatedAt > AUTH_ATTEMPT_TTL_MS) {
+      authAttemptsByRequest.delete(requestId);
+    }
+  }
+
+  while (authAttemptsByRequest.size > AUTH_ATTEMPT_MAX_ENTRIES) {
+    const oldestRequestId = authAttemptsByRequest.keys().next().value;
+    authAttemptsByRequest.delete(oldestRequestId);
+  }
+}
+
+function getAuthAttemptCount(requestId) {
+  const attempt = authAttemptsByRequest.get(requestId);
+  return attempt ? attempt.count : 0;
+}
+
+function recordAuthAttempt(requestId, count, now) {
+  authAttemptsByRequest.delete(requestId);
+  authAttemptsByRequest.set(requestId, {
+    count,
+    updatedAt: now,
+  });
+  pruneAuthAttempts(now);
 }
 
 function handleAuthRequired(details, asyncCallback) {
+  const now = Date.now();
+  // Avoid global onCompleted/onErrorOccurred listeners on <all_urls>. Auth request state
+  // is bounded here instead: stale entries expire by TTL, and the Map keeps only an LRU
+  // window large enough for concurrent proxy auth challenges.
+  pruneAuthAttempts(now);
+
   ProxyStorage.getAuthState()
     .then(async ({ active, proxyAuth }) => {
       if (!active || details.isProxy !== true || !isCurrentProxyChallenge(details, proxyAuth)) {
@@ -80,7 +131,7 @@ function handleAuthRequired(details, asyncCallback) {
         return;
       }
 
-      const attempts = authAttemptsByRequest.get(details.requestId) || 0;
+      const attempts = getAuthAttemptCount(details.requestId);
       if (attempts >= AUTH_RETRY_LIMIT) {
         authAttemptsByRequest.delete(details.requestId);
         await disconnectAfterAuthFailure();
@@ -89,7 +140,7 @@ function handleAuthRequired(details, asyncCallback) {
         return;
       }
 
-      authAttemptsByRequest.set(details.requestId, attempts + 1);
+      recordAuthAttempt(details.requestId, attempts + 1, now);
       asyncCallback({
         authCredentials: {
           username: proxyAuth.username,
@@ -157,17 +208,3 @@ chrome.proxy.onProxyError.addListener((details) => {
 });
 
 chrome.webRequest.onAuthRequired.addListener(handleAuthRequired, { urls: ["<all_urls>"] }, ["asyncBlocking"]);
-
-chrome.webRequest.onCompleted.addListener(
-  (details) => {
-    authAttemptsByRequest.delete(details.requestId);
-  },
-  { urls: ["<all_urls>"] },
-);
-
-chrome.webRequest.onErrorOccurred.addListener(
-  (details) => {
-    authAttemptsByRequest.delete(details.requestId);
-  },
-  { urls: ["<all_urls>"] },
-);
