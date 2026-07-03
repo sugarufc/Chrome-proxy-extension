@@ -8,6 +8,17 @@ function readRuntimeFile(fileName) {
   return fs.readFileSync(path.join(rootDir, fileName), "utf8");
 }
 
+function createEventMock() {
+  const listeners = [];
+
+  return {
+    listeners,
+    addListener(listener, filter, extraInfoSpec) {
+      listeners.push({ listener, filter, extraInfoSpec });
+    },
+  };
+}
+
 function createStorageArea(initial = {}) {
   const data = { ...initial };
 
@@ -64,9 +75,44 @@ function createStorageArea(initial = {}) {
 
 function createChromeMock({ local = {}, session = {} } = {}) {
   return {
+    action: {
+      badgeTextCalls: [],
+      iconCalls: [],
+      setBadgeText(value) {
+        this.badgeTextCalls.push(value);
+      },
+      setIcon(value) {
+        this.iconCalls.push(value);
+      },
+    },
+    runtime: {
+      lastError: null,
+      onInstalled: createEventMock(),
+      onStartup: createEventMock(),
+    },
+    proxy: {
+      onProxyError: createEventMock(),
+      settings: {
+        setCalls: [],
+        clearCalls: [],
+        set(value, callback = () => {}) {
+          this.setCalls.push(value);
+          callback();
+        },
+        clear(value, callback = () => {}) {
+          this.clearCalls.push(value);
+          callback();
+        },
+      },
+    },
     storage: {
       local: createStorageArea(local),
       session: createStorageArea(session),
+    },
+    webRequest: {
+      onAuthRequired: createEventMock(),
+      onCompleted: createEventMock(),
+      onErrorOccurred: createEventMock(),
     },
   };
 }
@@ -83,6 +129,15 @@ function createRuntimeContext(options = {}) {
 
   if (options.includeStorage !== false) {
     vm.runInContext(readRuntimeFile("storage-manager.js"), context, { filename: "storage-manager.js" });
+  }
+
+  if (options.includeBackground === true) {
+    context.importScripts = (...fileNames) => {
+      for (const fileName of fileNames) {
+        vm.runInContext(readRuntimeFile(fileName), context, { filename: fileName });
+      }
+    };
+    vm.runInContext(readRuntimeFile("background.js"), context, { filename: "background.js" });
   }
 
   return context;
