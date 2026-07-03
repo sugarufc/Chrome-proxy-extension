@@ -6,6 +6,7 @@
     buildProfileFromFields,
     validatePasswordForProfile,
     validateChromeProxySupport,
+    parseDirectConnectList,
     sanitizeErrorMessage,
   } = ProxyShared;
 
@@ -42,6 +43,7 @@
     const proxyPort = document.getElementById("proxyPort");
     const proxyUsername = document.getElementById("proxyUsername");
     const proxyPassword = document.getElementById("proxyPassword");
+    const directConnectList = document.getElementById("directConnectList");
     const togglePasswordButton = document.getElementById("togglePasswordButton");
     const rememberPassword = document.getElementById("rememberPassword");
     const errorMessage = document.getElementById("errorMessage");
@@ -124,6 +126,7 @@
         port: proxyPort.value,
         username: proxyUsername.value,
         password: proxyPassword.value,
+        directConnectList: directConnectList.value,
       };
     }
 
@@ -144,8 +147,13 @@
         const profile = buildProfileFromFields(values);
         validatePasswordForProfile(profile, values.password);
         validateChromeProxySupport(profile, values.password);
+        const parsedDirectConnectList = parseDirectConnectList(values.directConnectList);
         setErrorMessage("");
-        return { profile, password: values.password };
+        return {
+          profile,
+          password: values.password,
+          directConnectList: parsedDirectConnectList.join(", "),
+        };
       } catch (error) {
         if (showError) {
           setErrorMessage(error.message);
@@ -209,6 +217,7 @@
       }
 
       rememberPassword.checked = Boolean(state.rememberPassword);
+      directConnectList.value = state.directConnectList || DEFAULT_DIRECT_CONNECT_LIST;
       savedPasswordValue = response.password || "";
 
       if (savedPasswordValue) {
@@ -258,7 +267,7 @@
           profile: parsed.profile,
           password,
           rememberPassword: rememberPassword.checked,
-          directConnectList: DEFAULT_DIRECT_CONNECT_LIST,
+          directConnectList: parsed.directConnectList,
         });
         if (password) {
           proxyPassword.value = password;
@@ -299,6 +308,7 @@
       try {
         const response = await sendCommand("forgetAll");
         fillFormFromProfile({ scheme: "http", host: "", port: "", username: "" }, { password: "" });
+        directConnectList.value = DEFAULT_DIRECT_CONNECT_LIST;
         rememberPassword.checked = false;
         savedPasswordValue = "";
         showDisclaimer();
@@ -339,6 +349,7 @@
     proxyScheme.addEventListener("change", updateSocks5Notice);
     proxyUsername.addEventListener("input", updateSocks5Notice);
     proxyPassword.addEventListener("input", updateSocks5Notice);
+    directConnectList.value = DEFAULT_DIRECT_CONNECT_LIST;
 
     function refreshStatus() {
       sendCommand("getStatus")

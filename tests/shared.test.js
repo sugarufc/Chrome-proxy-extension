@@ -129,8 +129,13 @@ test("parseDirectConnectList returns trimmed entries and default bypass list", (
     "127.0.0.1",
     "<local>",
   ]);
-  assert.deepEqual(plain(parseDirectConnectList(" one.test, , two.test ")), ["one.test", "two.test"]);
+  assert.deepEqual(plain(parseDirectConnectList(" one.test, , two.test\n10.0.0.0/8 ")), [
+    "one.test",
+    "two.test",
+    "10.0.0.0/8",
+  ]);
   assert.deepEqual(plain(parseDirectConnectList("")), plain(parseDirectConnectList(DEFAULT_DIRECT_CONNECT_LIST)));
+  assert.throws(() => parseDirectConnectList("valid.test, bad host.test"), /must not contain spaces/);
 });
 
 test("buildProxyConfig and sanitizeParsedProxy shape Chrome-safe data", () => {

@@ -154,10 +154,18 @@
   }
 
   function parseDirectConnectList(input) {
-    return String(input || DEFAULT_DIRECT_CONNECT_LIST)
-      .split(",")
+    const items = String(input || DEFAULT_DIRECT_CONNECT_LIST)
+      .split(/[,\n]/)
       .map((item) => item.trim())
       .filter(Boolean);
+
+    for (const item of items) {
+      if (/\s/.test(item)) {
+        throw new Error("Direct connect list entries must not contain spaces.");
+      }
+    }
+
+    return items;
   }
 
   function buildProxyConfig(profile, directConnectList) {

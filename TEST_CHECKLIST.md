@@ -21,6 +21,8 @@ Use this checklist before submitting to the Chrome Web Store.
 ## Session and storage behavior
 
 - [ ] Default password storage uses session only
+- [ ] Direct connect list defaults to `localhost, 127.0.0.1, <local>`
+- [ ] Edited direct connect list is saved and used on reconnect
 - [ ] **Disconnect** clears session password and active auth state
 - [ ] **Disconnect** keeps local saved password when Remember password is enabled
 - [ ] **Disconnect** removes local saved password when Remember password is disabled
@@ -47,6 +49,8 @@ Use this checklist before submitting to the Chrome Web Store.
 - [ ] Password field uses `type="password"`
 - [ ] Show/Hide password works
 - [ ] Remember password checkbox works
+- [ ] Direct connect list field accepts comma-separated and newline-separated entries
+- [ ] Direct connect list field rejects entries with spaces
 - [ ] Remember password warning text is visible
 - [ ] No Device PIN UI is shown
 - [ ] Forget saved data button works
