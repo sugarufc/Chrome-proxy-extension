@@ -225,6 +225,7 @@ async function connectProxy(message) {
     rememberPassword: Boolean(message.rememberPassword),
     directConnectList,
     parsedProxy: sanitizeParsedProxy(profile, Boolean(password)),
+    profileId: message.profileId || "",
   });
   setActionIcon(true);
 
@@ -252,6 +253,24 @@ async function acceptDisclaimer() {
   return getStatusPayload();
 }
 
+async function saveProfile(message) {
+  await ProxyStorage.saveProfile({
+    name: message.name,
+    profile: message.profile,
+  });
+  return getStatusPayload();
+}
+
+async function deleteProfile(message) {
+  await ProxyStorage.deleteProfile(message.profileId);
+  return getStatusPayload();
+}
+
+async function selectProfile(message) {
+  await ProxyStorage.selectProfile(message.profileId);
+  return getStatusPayload();
+}
+
 async function runRuntimeCommand(message) {
   switch (message && message.command) {
     case "connect":
@@ -264,6 +283,12 @@ async function runRuntimeCommand(message) {
       return getCurrentStatus();
     case "acceptDisclaimer":
       return acceptDisclaimer();
+    case "saveProfile":
+      return saveProfile(message);
+    case "deleteProfile":
+      return deleteProfile(message);
+    case "selectProfile":
+      return selectProfile(message);
     default:
       throw new Error("Unknown command.");
   }

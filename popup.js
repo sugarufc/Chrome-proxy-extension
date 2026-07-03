@@ -38,6 +38,9 @@
     const mainSection = document.getElementById("mainSection");
     const disclaimerCheckbox = document.getElementById("disclaimerCheckbox");
     const acceptDisclaimerButton = document.getElementById("acceptDisclaimerButton");
+    const profileSelect = document.getElementById("profileSelect");
+    const saveProfileButton = document.getElementById("saveProfileButton");
+    const deleteProfileButton = document.getElementById("deleteProfileButton");
     const proxyScheme = document.getElementById("proxyScheme");
     const proxyHost = document.getElementById("proxyHost");
     const proxyPort = document.getElementById("proxyPort");
@@ -56,6 +59,7 @@
 
     let disclaimerAccepted = false;
     let savedPasswordValue = "";
+    let profiles = [];
 
     function updateSocks5Notice() {
       if (!socks5AuthNotice) {
@@ -71,6 +75,8 @@
       connectButton.disabled = isBusy || !disclaimerAccepted;
       disconnectButton.disabled = isBusy;
       forgetButton.disabled = isBusy;
+      saveProfileButton.disabled = isBusy;
+      deleteProfileButton.disabled = isBusy || !profileSelect.value;
     }
 
     function setProxyWarning(message) {
@@ -139,6 +145,36 @@
       if (options.password !== undefined) {
         proxyPassword.value = options.password;
       }
+    }
+
+    function profileLabel(profile) {
+      const username = profile.username ? `${profile.username}@` : "";
+      return `${profile.name} - ${profile.scheme}://${username}${profile.host}:${profile.port}`;
+    }
+
+    function selectedProfile() {
+      return profiles.find((profile) => profile.id === profileSelect.value) || null;
+    }
+
+    function populateProfileSelect(state) {
+      const selectedProfileId = state.selectedProfileId || "";
+      profiles = Array.isArray(state.proxyProfiles) ? state.proxyProfiles : [];
+      profileSelect.replaceChildren();
+
+      const emptyOption = document.createElement("option");
+      emptyOption.value = "";
+      emptyOption.textContent = "Unsaved settings";
+      profileSelect.appendChild(emptyOption);
+
+      for (const profile of profiles) {
+        const option = document.createElement("option");
+        option.value = profile.id;
+        option.textContent = profileLabel(profile);
+        profileSelect.appendChild(option);
+      }
+
+      profileSelect.value = profiles.some((profile) => profile.id === selectedProfileId) ? selectedProfileId : "";
+      deleteProfileButton.disabled = !profileSelect.value;
     }
 
     function parseCurrentForm({ showError }) {
@@ -212,8 +248,11 @@
 
     function loadSavedForm(response) {
       const state = response.state || {};
-      if (state.proxyProfile) {
-        fillFormFromProfile(state.proxyProfile);
+      populateProfileSelect(state);
+
+      const profile = selectedProfile() || state.proxyProfile;
+      if (profile) {
+        fillFormFromProfile(profile);
       }
 
       rememberPassword.checked = Boolean(state.rememberPassword);
@@ -268,6 +307,7 @@
           password,
           rememberPassword: rememberPassword.checked,
           directConnectList: parsed.directConnectList,
+          profileId: profileSelect.value || "",
         });
         if (password) {
           proxyPassword.value = password;
@@ -308,6 +348,7 @@
       try {
         const response = await sendCommand("forgetAll");
         fillFormFromProfile({ scheme: "http", host: "", port: "", username: "" }, { password: "" });
+        populateProfileSelect({});
         directConnectList.value = DEFAULT_DIRECT_CONNECT_LIST;
         rememberPassword.checked = false;
         savedPasswordValue = "";
@@ -329,6 +370,61 @@
       togglePasswordButton.setAttribute("aria-pressed", String(isHidden));
     }
 
+    async function saveCurrentProfile() {
+      const parsed = parseCurrentForm({ showError: true });
+      if (!parsed) {
+        return;
+      }
+
+      const currentProfile = selectedProfile();
+      const suggestedName = currentProfile ? currentProfile.name : parsed.profile.host || "Profile";
+      const name = window.prompt("Profile name", suggestedName);
+      if (name === null) {
+        return;
+      }
+
+      setBusy(true);
+      try {
+        const response = await sendCommand("saveProfile", {
+          name,
+          profile: parsed.profile,
+        });
+        loadSavedForm(response);
+        updateSocks5Notice();
+        applyStatusResponse(response);
+      } catch (error) {
+        setStatus("error", error.message);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function deleteSelectedProfile() {
+      const profile = selectedProfile();
+      if (!profile) {
+        return;
+      }
+
+      const confirmed = window.confirm(`Delete profile "${profile.name}"?`);
+      if (!confirmed) {
+        return;
+      }
+
+      setBusy(true);
+      try {
+        const response = await sendCommand("deleteProfile", {
+          profileId: profile.id,
+        });
+        loadSavedForm(response);
+        updateSocks5Notice();
+        applyStatusResponse(response);
+      } catch (error) {
+        setStatus("error", error.message);
+      } finally {
+        setBusy(false);
+      }
+    }
+
     disclaimerCheckbox.addEventListener("change", () => {
       acceptDisclaimerButton.disabled = !disclaimerCheckbox.checked;
     });
@@ -345,7 +441,25 @@
     connectButton.addEventListener("click", connect);
     disconnectButton.addEventListener("click", disconnect);
     forgetButton.addEventListener("click", forgetSavedData);
+    saveProfileButton.addEventListener("click", saveCurrentProfile);
+    deleteProfileButton.addEventListener("click", deleteSelectedProfile);
     togglePasswordButton.addEventListener("click", togglePasswordVisibility);
+    profileSelect.addEventListener("change", async () => {
+      const profile = selectedProfile();
+      if (profile) {
+        fillFormFromProfile(profile);
+      }
+      deleteProfileButton.disabled = !profileSelect.value;
+      updateSocks5Notice();
+
+      try {
+        await sendCommand("selectProfile", {
+          profileId: profileSelect.value,
+        });
+      } catch (error) {
+        setStatus("error", error.message);
+      }
+    });
     proxyScheme.addEventListener("change", updateSocks5Notice);
     proxyUsername.addEventListener("input", updateSocks5Notice);
     proxyPassword.addEventListener("input", updateSocks5Notice);

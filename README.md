@@ -14,6 +14,7 @@ The extension applies proxy settings locally inside Chrome. It does not provide 
 ## What the extension does
 
 - Accepts proxy type, host, port, username, and password entered by the user
+- Saves multiple named proxy profiles
 - Applies the proxy configuration to Chrome through the Chrome Proxy API
 - Lets the user edit Chrome's direct-connect bypass list for hosts that should not use the proxy
 - Disconnects Chrome from that proxy when the user chooses
@@ -120,10 +121,11 @@ This creates `dist/proxy-switcher.zip` with only runtime files.
 1. Load the extension unpacked or from the ZIP
 2. Accept the disclaimer
 3. Enter proxy settings manually
-4. Keep or edit the default **Direct connect (bypass) list**: `localhost, 127.0.0.1, <local>`
-5. Click **Connect**
-6. Click **Disconnect** and confirm behavior
-7. Use [TEST_CHECKLIST.md](TEST_CHECKLIST.md) for full manual verification
+4. Optionally click **Save as profile** to store the current proxy as a named profile
+5. Keep or edit the default **Direct connect (bypass) list**: `localhost, 127.0.0.1, <local>`
+6. Click **Connect**
+7. Click **Disconnect** and confirm behavior
+8. Use [TEST_CHECKLIST.md](TEST_CHECKLIST.md) for full manual verification
 
 ## Files
 

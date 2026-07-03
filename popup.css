@@ -150,6 +150,12 @@ h2 {
   gap: 8px;
 }
 
+.profile-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 .password-row input {
   flex: 1;
   min-width: 0;
@@ -262,6 +268,7 @@ textarea:focus {
 
 .button-small {
   height: 34px;
+  padding: 0 12px;
 }
 
 .button-block {

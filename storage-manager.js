@@ -4,11 +4,17 @@
   const SESSION_PASSWORD_KEY = "sessionPassword";
   const SESSION_CONNECTED_KEY = "sessionConnected";
   const LOCAL_PASSWORD_KEY = "savedPassword";
+  const PROFILES_KEY = "proxyProfiles";
+  const SELECTED_PROFILE_ID_KEY = "selectedProfileId";
+  const ACTIVE_PROFILE_ID_KEY = "activeProfileId";
   const LOCAL_KEYS = [
     "disclaimerAccepted",
     "active",
     "rememberPassword",
     "proxyProfile",
+    PROFILES_KEY,
+    SELECTED_PROFILE_ID_KEY,
+    ACTIVE_PROFILE_ID_KEY,
     LOCAL_PASSWORD_KEY,
     "directConnectList",
     "parsedProxy",
@@ -75,6 +81,135 @@
     };
   }
 
+  function profileFields(profile) {
+    const normalized = ProxyShared.buildProfileFromFields(profile || {});
+
+    return {
+      scheme: normalized.scheme,
+      host: normalized.host,
+      port: normalized.port,
+      username: normalized.username || "",
+    };
+  }
+
+  function profileFromRecord(record) {
+    if (!record) {
+      return null;
+    }
+
+    return profileFields(record);
+  }
+
+  function makeProfileId() {
+    return `profile-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  function normalizeProfileName(name) {
+    const normalized = String(name || "").trim();
+    if (!normalized) {
+      throw new Error("Profile name is required.");
+    }
+    return normalized.slice(0, 80);
+  }
+
+  async function getProfiles() {
+    const state = await getLocal([PROFILES_KEY]);
+    return Array.isArray(state[PROFILES_KEY]) ? state[PROFILES_KEY] : [];
+  }
+
+  async function migrateProxyProfileToProfiles() {
+    const state = await getLocal(["proxyProfile", PROFILES_KEY, SELECTED_PROFILE_ID_KEY]);
+    if (!state.proxyProfile || (Array.isArray(state[PROFILES_KEY]) && state[PROFILES_KEY].length > 0)) {
+      return;
+    }
+
+    const defaultProfile = {
+      id: "default",
+      name: "Default",
+      ...profileFields(state.proxyProfile),
+    };
+
+    await setLocal({
+      [PROFILES_KEY]: [defaultProfile],
+      [SELECTED_PROFILE_ID_KEY]: state[SELECTED_PROFILE_ID_KEY] || defaultProfile.id,
+    });
+  }
+
+  async function saveProfile({ name, profile }) {
+    const profileName = normalizeProfileName(name);
+    const profilePayload = profileFields(profile);
+    const profiles = await getProfiles();
+    const existingIndex = profiles.findIndex((item) => item.name.toLowerCase() === profileName.toLowerCase());
+    const existing = existingIndex >= 0 ? profiles[existingIndex] : null;
+    const savedProfile = {
+      id: existing ? existing.id : makeProfileId(),
+      name: profileName,
+      ...profilePayload,
+    };
+
+    if (existingIndex >= 0) {
+      profiles[existingIndex] = savedProfile;
+    } else {
+      profiles.push(savedProfile);
+    }
+
+    await setLocal({
+      [PROFILES_KEY]: profiles,
+      [SELECTED_PROFILE_ID_KEY]: savedProfile.id,
+      proxyProfile: profilePayload,
+      lastError: "",
+    });
+
+    return savedProfile;
+  }
+
+  async function deleteProfile(profileId) {
+    const id = String(profileId || "");
+    const state = await getLocal([PROFILES_KEY, SELECTED_PROFILE_ID_KEY, ACTIVE_PROFILE_ID_KEY]);
+    const profiles = Array.isArray(state[PROFILES_KEY]) ? state[PROFILES_KEY] : [];
+    const nextProfiles = profiles.filter((profile) => profile.id !== id);
+    const selectedProfileId =
+      state[SELECTED_PROFILE_ID_KEY] === id ? nextProfiles[0]?.id || "" : state[SELECTED_PROFILE_ID_KEY] || "";
+    const selectedProfile = nextProfiles.find((profile) => profile.id === selectedProfileId);
+    const nextState = {
+      [PROFILES_KEY]: nextProfiles,
+      [SELECTED_PROFILE_ID_KEY]: selectedProfileId,
+    };
+
+    if (state[ACTIVE_PROFILE_ID_KEY] === id) {
+      nextState[ACTIVE_PROFILE_ID_KEY] = "";
+    }
+
+    if (selectedProfile) {
+      nextState.proxyProfile = profileFromRecord(selectedProfile);
+    }
+
+    await setLocal(nextState);
+    return selectedProfile || null;
+  }
+
+  async function selectProfile(profileId) {
+    const id = String(profileId || "");
+    if (!id) {
+      await setLocal({ [SELECTED_PROFILE_ID_KEY]: "" });
+      return null;
+    }
+
+    const profiles = await getProfiles();
+    const selectedProfile = profiles.find((profile) => profile.id === id);
+    if (!selectedProfile) {
+      throw new Error("Selected profile was not found.");
+    }
+
+    await setLocal({
+      [SELECTED_PROFILE_ID_KEY]: id,
+      proxyProfile: profileFromRecord(selectedProfile),
+      lastError: "",
+    });
+
+    return selectedProfile;
+  }
+
   async function configureTrustedStorageAccess() {
     if (!chrome.storage.local.setAccessLevel) {
       return;
@@ -94,16 +229,21 @@
     ]);
   }
 
-  async function saveConnection({ profile, password, rememberPassword, directConnectList, parsedProxy }) {
+  async function saveConnection({ profile, password, rememberPassword, directConnectList, parsedProxy, profileId }) {
     const localPayload = {
       active: true,
       rememberPassword: Boolean(rememberPassword),
       proxyProfile: profile,
+      [ACTIVE_PROFILE_ID_KEY]: profileId || "",
       directConnectList,
       parsedProxy,
       lastError: "",
       lastProxyError: "",
     };
+
+    if (profileId) {
+      localPayload[SELECTED_PROFILE_ID_KEY] = profileId;
+    }
 
     if (rememberPassword && password) {
       localPayload[LOCAL_PASSWORD_KEY] = password;
@@ -198,6 +338,7 @@
       }
     }
 
+    await migrateProxyProfileToProfiles();
     await removeLocal(LEGACY_SECRET_KEYS);
   }
 
@@ -206,7 +347,15 @@
     LOCAL_PASSWORD_KEY,
     SESSION_PASSWORD_KEY,
     SESSION_CONNECTED_KEY,
+    PROFILES_KEY,
+    SELECTED_PROFILE_ID_KEY,
+    ACTIVE_PROFILE_ID_KEY,
     buildProxyAuth,
+    getProfiles,
+    saveProfile,
+    deleteProfile,
+    selectProfile,
+    migrateProxyProfileToProfiles,
     configureTrustedStorageAccess,
     saveConnection,
     resolveSessionPassword,
