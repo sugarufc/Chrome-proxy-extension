@@ -35,13 +35,13 @@ The extension applies proxy settings locally inside Chrome. It does not provide 
 
 ## Permissions explained
 
-| Permission | Why it is required |
-|---|---|
-| `proxy` | Apply and clear the user's proxy configuration in Chrome |
-| `storage` | Save proxy settings and local preferences on the device |
-| `webRequest` | Handle proxy authentication challenges for the configured proxy |
-| `webRequestAuthProvider` | Provide username and password to the configured proxy when Chrome requests proxy authentication |
-| `<all_urls>` | Required by Chrome so proxy authentication callbacks can be handled for requests routed through the configured proxy |
+| Permission               | Why it is required                                                                                                   |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `proxy`                  | Apply and clear the user's proxy configuration in Chrome                                                             |
+| `storage`                | Save proxy settings and local preferences on the device                                                              |
+| `webRequest`             | Handle proxy authentication challenges for the configured proxy                                                      |
+| `webRequestAuthProvider` | Provide username and password to the configured proxy when Chrome requests proxy authentication                      |
+| `<all_urls>`             | Required by Chrome so proxy authentication callbacks can be handled for requests routed through the configured proxy |
 
 These permissions are not used to collect browsing history or transmit user data to the developer.
 

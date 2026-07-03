@@ -1,10 +1,10 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Proxy Switcher</title>
-    <link rel="stylesheet" href="popup.css">
+    <link rel="stylesheet" href="popup.css" />
   </head>
   <body>
     <main class="app">
@@ -19,12 +19,12 @@
       <section id="disclaimerSection" class="disclaimer" hidden>
         <h2>Before you continue</h2>
         <p>
-          This extension only configures Chrome to use the proxy you provide. It does not provide proxy servers,
-          VPN services, anonymity, or access to restricted services. You are responsible for using your proxy in
-          compliance with applicable laws, website terms, and your proxy provider's rules.
+          This extension only configures Chrome to use the proxy you provide. It does not provide proxy servers, VPN
+          services, anonymity, or access to restricted services. You are responsible for using your proxy in compliance
+          with applicable laws, website terms, and your proxy provider's rules.
         </p>
         <label class="checkbox-row">
-          <input id="disclaimerCheckbox" type="checkbox">
+          <input id="disclaimerCheckbox" type="checkbox" />
           <span>I understand</span>
         </label>
         <button id="acceptDisclaimerButton" class="button button-primary" type="button" disabled>Continue</button>
@@ -39,39 +39,56 @@
             <option value="socks5">SOCKS5</option>
           </select>
           <p id="socks5AuthNotice" class="helper-text remember-warning" hidden>
-            Chrome cannot authenticate SOCKS5 proxies in extensions. Use HTTP or HTTPS if your provider supports it, or run a local HTTP forwarder to your SOCKS5 proxy and connect to 127.0.0.1 here.
+            Chrome cannot authenticate SOCKS5 proxies in extensions. Use HTTP or HTTPS if your provider supports it, or
+            run a local HTTP forwarder to your SOCKS5 proxy and connect to 127.0.0.1 here.
           </p>
         </div>
 
         <div class="field-row">
           <div class="field field-grow">
             <label for="proxyHost">Host</label>
-            <input id="proxyHost" type="text" spellcheck="false" autocomplete="off" placeholder="proxy.example.com">
+            <input id="proxyHost" type="text" spellcheck="false" autocomplete="off" placeholder="proxy.example.com" />
           </div>
           <div class="field field-port">
             <label for="proxyPort">Port</label>
-            <input id="proxyPort" type="number" min="1" max="65535" autocomplete="off" placeholder="8080">
+            <input id="proxyPort" type="number" min="1" max="65535" autocomplete="off" placeholder="8080" />
           </div>
         </div>
 
         <div class="field">
           <label for="proxyUsername">Username</label>
-          <input id="proxyUsername" type="text" spellcheck="false" autocomplete="off" placeholder="Optional">
+          <input id="proxyUsername" type="text" spellcheck="false" autocomplete="off" placeholder="Optional" />
         </div>
 
         <div class="field">
           <label for="proxyPassword">Password</label>
           <div class="password-row">
-            <input id="proxyPassword" type="password" spellcheck="false" autocomplete="off" placeholder="Optional unless username is set">
-            <button id="togglePasswordButton" class="button button-secondary button-small" type="button" aria-pressed="false">Show</button>
+            <input
+              id="proxyPassword"
+              type="password"
+              spellcheck="false"
+              autocomplete="off"
+              placeholder="Optional unless username is set"
+            />
+            <button
+              id="togglePasswordButton"
+              class="button button-secondary button-small"
+              type="button"
+              aria-pressed="false"
+            >
+              Show
+            </button>
           </div>
         </div>
 
         <label class="checkbox-row">
-          <input id="rememberPassword" type="checkbox">
+          <input id="rememberPassword" type="checkbox" />
           <span>Remember password on this device</span>
         </label>
-        <p class="helper-text remember-warning">Session-only by default. If Remember is enabled, the password is stored locally in this Chrome profile — not for shared or untrusted devices.</p>
+        <p class="helper-text remember-warning">
+          Session-only by default. If Remember is enabled, the password is stored locally in this Chrome profile — not
+          for shared or untrusted devices.
+        </p>
 
         <p id="errorMessage" class="error-message" role="alert" hidden></p>
         <p id="warningMessage" class="warning-message" role="status" hidden></p>

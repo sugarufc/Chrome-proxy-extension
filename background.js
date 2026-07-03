@@ -1,6 +1,6 @@
 importScripts("shared.js", "storage-manager.js");
 
-"use strict";
+("use strict");
 
 const AUTH_RETRY_LIMIT = 2;
 const authAttemptsByRequest = new Map();
@@ -56,7 +56,7 @@ async function disconnectAfterAuthFailure() {
   authAttemptsByRequest.clear();
   try {
     await proxySettingsClear();
-  } catch (error) {
+  } catch (_error) {
     // Ignore cleanup errors after auth failure.
   }
   await ProxyStorage.setDisconnected();
@@ -135,7 +135,7 @@ async function restoreProxyForCurrentSession() {
     setActionIcon(false);
     try {
       await proxySettingsClear();
-    } catch (clearError) {
+    } catch (_clearError) {
       // Ignore cleanup errors after a failed restore.
     }
   }
@@ -156,11 +156,7 @@ chrome.proxy.onProxyError.addListener((details) => {
   markProxyWarning(message);
 });
 
-chrome.webRequest.onAuthRequired.addListener(
-  handleAuthRequired,
-  { urls: ["<all_urls>"] },
-  ["asyncBlocking"],
-);
+chrome.webRequest.onAuthRequired.addListener(handleAuthRequired, { urls: ["<all_urls>"] }, ["asyncBlocking"]);
 
 chrome.webRequest.onCompleted.addListener(
   (details) => {

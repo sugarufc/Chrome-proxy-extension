@@ -72,16 +72,16 @@ This permission is not used to collect browsing history or transmit user data to
 
 Use these answers in the Chrome Web Store developer dashboard.
 
-| Question | Answer |
-|---|---|
-| Developer collects user data | **No** |
-| Extension stores data locally | **Yes** |
-| Data sharing with third parties | **No** |
-| Analytics | **No** |
-| Remote servers / remote code | **No** |
-| Browsing history collection | **No** |
-| Visited URLs collection | **No** |
-| Traffic content collection | **No** |
+| Question                        | Answer  |
+| ------------------------------- | ------- |
+| Developer collects user data    | **No**  |
+| Extension stores data locally   | **Yes** |
+| Data sharing with third parties | **No**  |
+| Analytics                       | **No**  |
+| Remote servers / remote code    | **No**  |
+| Browsing history collection     | **No**  |
+| Visited URLs collection         | **No**  |
+| Traffic content collection      | **No**  |
 
 ### Locally stored data
 
@@ -118,12 +118,12 @@ This extension only configures Chrome to use the proxy you provide. It does not 
 
 ## Store graphics
 
-| Asset | File | Size | Use in Chrome Web Store |
-|---|---|---|---|
-| Promo banner | `store-assets/promo-tile.png` | 1024×409 | Optional marketing / GitHub social preview |
-| Main form screenshot | `store-assets/screenshot-main-form-1280x800.png` | 1280×800 | Upload as store screenshot #1 |
-| Disclaimer screenshot | `store-assets/screenshot-disclaimer-1280x800.png` | 1280×800 | Upload as store screenshot #2 |
-| Source captures | `store-assets/screenshot-main-form.png`, `screenshot-disclaimer.png` | original | Keep for future edits only |
+| Asset                 | File                                                                 | Size     | Use in Chrome Web Store                    |
+| --------------------- | -------------------------------------------------------------------- | -------- | ------------------------------------------ |
+| Promo banner          | `store-assets/promo-tile.png`                                        | 1024×409 | Optional marketing / GitHub social preview |
+| Main form screenshot  | `store-assets/screenshot-main-form-1280x800.png`                     | 1280×800 | Upload as store screenshot #1              |
+| Disclaimer screenshot | `store-assets/screenshot-disclaimer-1280x800.png`                    | 1280×800 | Upload as store screenshot #2              |
+| Source captures       | `store-assets/screenshot-main-form.png`, `screenshot-disclaimer.png` | original | Keep for future edits only                 |
 
 Upload the `*-1280x800.png` files in the Chrome Web Store dashboard.
 

@@ -15,15 +15,8 @@
   "background": {
     "service_worker": "background.js"
   },
-  "permissions": [
-    "proxy",
-    "storage",
-    "webRequest",
-    "webRequestAuthProvider"
-  ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
+  "permissions": ["proxy", "storage", "webRequest", "webRequestAuthProvider"],
+  "host_permissions": ["<all_urls>"],
   "content_security_policy": {
     "extension_pages": "default-src 'self'; script-src 'self'; object-src 'self'; base-uri 'none'; connect-src 'none'"
   },

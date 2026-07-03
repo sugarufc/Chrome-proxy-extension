@@ -193,7 +193,7 @@
           },
           directConnectList: state.bypassList || ProxyShared.DEFAULT_DIRECT_CONNECT_LIST,
         });
-      } catch (error) {
+      } catch (_error) {
         // Skip invalid legacy URL values.
       }
     }
