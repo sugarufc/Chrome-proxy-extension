@@ -1,7 +1,8 @@
 (function initProxyShared() {
   "use strict";
 
-  const DEFAULT_DIRECT_CONNECT_LIST = "localhost, 127.0.0.1, <local>";
+  // Local addresses always connect directly so local servers and forwarders keep working.
+  const DEFAULT_BYPASS_LIST = Object.freeze(["localhost", "127.0.0.1", "<local>"]);
   const SUPPORTED_SCHEMES = new Set(["http", "https", "socks5"]);
   const SCHEMES_REQUIRING_AUTH = new Set(["http", "https"]);
   const SCHEMES_WITHOUT_EXTENSION_AUTH = new Set(["socks5"]);
@@ -176,22 +177,7 @@
     return text;
   }
 
-  function parseDirectConnectList(input) {
-    const items = String(input || DEFAULT_DIRECT_CONNECT_LIST)
-      .split(/[,\n]/)
-      .map((item) => item.trim())
-      .filter(Boolean);
-
-    for (const item of items) {
-      if (/\s/.test(item)) {
-        throw new Error("Direct connect list entries must not contain spaces.");
-      }
-    }
-
-    return items;
-  }
-
-  function buildProxyConfig(profile, directConnectList) {
+  function buildProxyConfig(profile) {
     return {
       mode: "fixed_servers",
       rules: {
@@ -200,7 +186,7 @@
           host: profile.host,
           port: profile.port,
         },
-        bypassList: directConnectList,
+        bypassList: [...DEFAULT_BYPASS_LIST],
       },
     };
   }
@@ -220,7 +206,7 @@
   }
 
   const shared = {
-    DEFAULT_DIRECT_CONNECT_LIST,
+    DEFAULT_BYPASS_LIST,
     SUPPORTED_SCHEMES,
     SCHEMES_REQUIRING_AUTH,
     SCHEMES_WITHOUT_EXTENSION_AUTH,
@@ -228,7 +214,6 @@
     buildProfileFromFields,
     validatePasswordForProfile,
     validateChromeProxySupport,
-    parseDirectConnectList,
     buildProxyConfig,
     sanitizeParsedProxy,
     sanitizeErrorMessage,

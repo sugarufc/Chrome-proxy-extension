@@ -21,7 +21,6 @@ test("saveConnection stores password in session by default and not in local stor
     profile,
     password: "secret",
     rememberPassword: false,
-    directConnectList: "localhost, 127.0.0.1, <local>",
     parsedProxy: { scheme: "http", host: "proxy.example.com", port: 8080 },
   });
 
@@ -39,7 +38,6 @@ test("saveConnection stores remembered password locally only when requested", as
     profile,
     password: "secret",
     rememberPassword: true,
-    directConnectList: "localhost",
     parsedProxy: null,
   });
 
@@ -56,7 +54,6 @@ test("saveConnection snapshots the connected proxy so profile switching cannot c
     profile: connectedProfile,
     password: "secret",
     rememberPassword: false,
-    directConnectList: "localhost",
     parsedProxy: null,
   });
 
@@ -183,7 +180,8 @@ test("cleanupLegacySecrets migrates legacy proxyUrl and removes legacy secret ke
     port: 8080,
     username: "user",
   });
-  assert.equal(chrome.storage.local.data.directConnectList, "localhost, 127.0.0.1");
+  assert.equal(chrome.storage.local.data.directConnectList, undefined);
+  assert.equal(chrome.storage.local.data.bypassList, undefined);
   assert.equal(chrome.storage.local.data.proxyUrl, undefined);
   assert.equal(chrome.storage.local.data.proxyAuth, undefined);
   assert.equal(chrome.storage.local.data.encryptedPassword, undefined);

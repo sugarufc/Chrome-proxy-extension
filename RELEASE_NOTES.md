@@ -1,4 +1,4 @@
-# Release Notes — 2.3.0
+# Release Notes — 2.4.0
 
 **Release date:** July 9, 2026
 
@@ -6,30 +6,31 @@
 
 ## Summary
 
-Adds a manual connection test and clearer proxy error reporting. Fixes proxy authentication after switching profiles while connected, a CSP rule that would have blocked the connection test, and error messages that displayed as `[redacted]`.
+Simplifies the popup: the **Direct connect (bypass) list** field is removed. Local addresses (`localhost`, `127.0.0.1`, `<local>`) always connect directly; everything else goes through the proxy. Connect and go.
 
 ## Changes
 
-### Added
+### Removed
 
-- **Test connection** button: optional manual check via `https://www.gstatic.com/generate_204` that runs only when clicked, and reports whether the test went through the active proxy or a direct connection
-- Human-readable hints for common Chrome proxy errors such as `net::ERR_PROXY_CONNECTION_FAILED`
-- The popup shows a summary line of the currently connected proxy
+- **Direct connect (bypass) list** field and its storage (`directConnectList`); the key is cleaned up on install/update
+- `parseDirectConnectList` helper and related validation
 
-### Fixed
+### Changed
 
-- The manifest CSP `connect-src` now allows the connection test endpoint; the previous `connect-src 'none'` also governed the service worker and would have blocked the test fetch
-- Proxy authentication and session restore now use a snapshot of the proxy that was actually connected (`activeProxy`); switching or deleting profiles in the popup while connected no longer breaks auth challenges or restores the wrong proxy after a service worker restart
-- Validation messages such as "Password is required when username is provided." are no longer over-redacted to `[redacted]` in the popup
-- **Connect** now shows the specific validation error instead of a generic "Proxy settings are incomplete."
+- The bypass list is now a fixed built-in default: `localhost, 127.0.0.1, <local>` — local servers and local SOCKS5 forwarders keep working without configuration
 
-### Security
+## Previous release — 2.3.0
 
-- The status payload no longer duplicates the saved password inside the general state object; the popup receives it only through the dedicated password field
+- **Test connection** button (manual check via `https://www.gstatic.com/generate_204`), with proxy/direct reporting
+- Manifest CSP fixed to allow the connection test from the service worker
+- Proxy auth and session restore pinned to the connected proxy snapshot (`activeProxy`); switching or deleting profiles while connected no longer breaks auth
+- Validation messages no longer over-redacted to `[redacted]`
+- Human-readable hints for common `net::ERR_*` proxy errors
+- Active proxy summary shown in the popup
 
 ## Pre-upload checklist
 
-- [x] Version bumped to `2.3.0` in `manifest.json` and `package.json`
+- [x] Version bumped to `2.4.0` in `manifest.json` and `package.json`
 - [x] `npm test`, `npm run lint`, and `npm run format` pass
 - [ ] ZIP rebuilt via `npm run build`
 - [ ] Publish `PRIVACY.md` at a public URL before store submission — https://github.com/sugarufc/Chrome-proxy-extension/blob/main/PRIVACY.md

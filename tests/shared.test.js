@@ -146,28 +146,11 @@ test("describeProxyError adds hints for known Chrome proxy errors and passes oth
   assert.equal(describeProxyError(""), "Proxy connection error");
 });
 
-test("parseDirectConnectList returns trimmed entries and default bypass list", () => {
-  const { DEFAULT_DIRECT_CONNECT_LIST, parseDirectConnectList } = shared();
-
-  assert.deepEqual(plain(parseDirectConnectList("localhost, 127.0.0.1, <local>")), [
-    "localhost",
-    "127.0.0.1",
-    "<local>",
-  ]);
-  assert.deepEqual(plain(parseDirectConnectList(" one.test, , two.test\n10.0.0.0/8 ")), [
-    "one.test",
-    "two.test",
-    "10.0.0.0/8",
-  ]);
-  assert.deepEqual(plain(parseDirectConnectList("")), plain(parseDirectConnectList(DEFAULT_DIRECT_CONNECT_LIST)));
-  assert.throws(() => parseDirectConnectList("valid.test, bad host.test"), /must not contain spaces/);
-});
-
 test("buildProxyConfig and sanitizeParsedProxy shape Chrome-safe data", () => {
   const { buildProxyConfig, sanitizeParsedProxy } = shared();
   const profile = { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" };
 
-  assert.deepEqual(plain(buildProxyConfig(profile, ["localhost"])), {
+  assert.deepEqual(plain(buildProxyConfig(profile)), {
     mode: "fixed_servers",
     rules: {
       singleProxy: {
@@ -175,7 +158,7 @@ test("buildProxyConfig and sanitizeParsedProxy shape Chrome-safe data", () => {
         host: "proxy.example.com",
         port: 8080,
       },
-      bypassList: ["localhost"],
+      bypassList: ["localhost", "127.0.0.1", "<local>"],
     },
   });
 

@@ -59,7 +59,6 @@ test("background connect message applies proxy settings, icon, and storage state
     },
     password: "secret",
     rememberPassword: false,
-    directConnectList: "localhost\n127.0.0.1, <local>",
   });
 
   assert.equal(response.ok, true);
@@ -70,7 +69,7 @@ test("background connect message applies proxy settings, icon, and storage state
     "<local>",
   ]);
   assert.equal(chrome.storage.local.data.active, true);
-  assert.equal(chrome.storage.local.data.directConnectList, "localhost\n127.0.0.1, <local>");
+  assert.equal(chrome.storage.local.data.directConnectList, undefined);
   assert.equal(chrome.storage.local.data.proxyProfile.host, "proxy.example.com");
   assert.equal(chrome.storage.local.data.activeProxy.host, "proxy.example.com");
   assert.equal(chrome.storage.local.data.savedPassword, undefined);
