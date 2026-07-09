@@ -17,6 +17,8 @@ The extension applies proxy settings locally inside Chrome. It does not provide 
 - Saves multiple named proxy profiles
 - Applies the proxy configuration to Chrome through the Chrome Proxy API
 - Lets the user edit Chrome's direct-connect bypass list for hosts that should not use the proxy
+- Provides an optional manual connection test using `https://www.gstatic.com/generate_204`
+- Shows which proxy is currently connected and explains common Chrome proxy errors
 - Disconnects Chrome from that proxy when the user chooses
 - Responds to proxy authentication challenges only for the configured proxy
 - Stores proxy settings locally on the user's device
@@ -124,8 +126,9 @@ This creates `dist/proxy-switcher.zip` with only runtime files.
 4. Optionally click **Save as profile** to store the current proxy as a named profile
 5. Keep or edit the default **Direct connect (bypass) list**: `localhost, 127.0.0.1, <local>`
 6. Click **Connect**
-7. Click **Disconnect** and confirm behavior
-8. Use [TEST_CHECKLIST.md](TEST_CHECKLIST.md) for full manual verification
+7. Optionally click **Test connection**
+8. Click **Disconnect** and confirm behavior
+9. Use [TEST_CHECKLIST.md](TEST_CHECKLIST.md) for full manual verification
 
 ## Files
 

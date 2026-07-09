@@ -7,11 +7,13 @@
   const PROFILES_KEY = "proxyProfiles";
   const SELECTED_PROFILE_ID_KEY = "selectedProfileId";
   const ACTIVE_PROFILE_ID_KEY = "activeProfileId";
+  const ACTIVE_PROXY_KEY = "activeProxy";
   const LOCAL_KEYS = [
     "disclaimerAccepted",
     "active",
     "rememberPassword",
     "proxyProfile",
+    ACTIVE_PROXY_KEY,
     PROFILES_KEY,
     SELECTED_PROFILE_ID_KEY,
     ACTIVE_PROFILE_ID_KEY,
@@ -234,6 +236,9 @@
       active: true,
       rememberPassword: Boolean(rememberPassword),
       proxyProfile: profile,
+      // Snapshot of the connected proxy. Auth challenges and session restore must keep
+      // using this even if the user switches or edits profiles without reconnecting.
+      [ACTIVE_PROXY_KEY]: profile,
       [ACTIVE_PROFILE_ID_KEY]: profileId || "",
       directConnectList,
       parsedProxy,
@@ -279,14 +284,15 @@
   }
 
   async function getAuthState() {
-    const state = await getLocal(["active", "proxyProfile"]);
+    const state = await getLocal(["active", "proxyProfile", ACTIVE_PROXY_KEY]);
     const sessionConnected = await isSessionConnected();
     const password = sessionConnected ? await resolveSessionPassword() : "";
     const active = Boolean(state.active && sessionConnected);
+    const connectedProfile = state[ACTIVE_PROXY_KEY] || state.proxyProfile;
 
     return {
       active,
-      proxyAuth: buildProxyAuth(state.proxyProfile, password),
+      proxyAuth: buildProxyAuth(connectedProfile, password),
       sessionConnected,
     };
   }
@@ -308,9 +314,7 @@
       lastProxyError: "",
     });
 
-    if (!rememberPassword) {
-      await removeLocal([LOCAL_PASSWORD_KEY]);
-    }
+    await removeLocal(rememberPassword ? [ACTIVE_PROXY_KEY] : [ACTIVE_PROXY_KEY, LOCAL_PASSWORD_KEY]);
   }
 
   async function forgetAllData() {
@@ -350,6 +354,7 @@
     PROFILES_KEY,
     SELECTED_PROFILE_ID_KEY,
     ACTIVE_PROFILE_ID_KEY,
+    ACTIVE_PROXY_KEY,
     buildProxyAuth,
     getProfiles,
     saveProfile,

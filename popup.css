@@ -248,6 +248,15 @@ textarea:focus {
   line-height: 1.35;
 }
 
+.warning-message.success {
+  color: #0f6b38;
+}
+
+.active-proxy-info {
+  color: #0f6b38;
+  font-weight: 600;
+}
+
 .actions {
   display: grid;
   grid-template-columns: 1fr 1fr;

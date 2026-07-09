@@ -15,6 +15,13 @@ Use this checklist before submitting to the Chrome Web Store.
 - [ ] HTTPS proxy with auth connects successfully
 - [ ] SOCKS5 proxy with auth is blocked with a clear Chrome limitation message
 - [ ] Saved profile connects with one profile selection plus **Connect**
+- [ ] Switching the profile dropdown while connected keeps proxy auth working for the connected proxy
+- [ ] Deleting a profile while connected keeps proxy auth working for the connected proxy
+- [ ] **Test connection** returns OK only after explicit click
+- [ ] **Test connection** reports whether it ran through the active proxy or a direct connection
+- [ ] **Test connection** timeout/failure shows a safe error
+- [ ] **Test connection** produces no CSP violation in the service worker console
+- [ ] Common proxy errors (e.g. `net::ERR_PROXY_CONNECTION_FAILED`) show a human-readable hint
 - [ ] Wrong password shows a safe error and does not log credentials
 - [ ] Wrong host shows a safe error
 - [ ] Wrong port shows a safe error
@@ -58,6 +65,7 @@ Use this checklist before submitting to the Chrome Web Store.
 - [ ] Direct connect list field accepts comma-separated and newline-separated entries
 - [ ] Direct connect list field rejects entries with spaces
 - [ ] Remember password warning text is visible
+- [ ] Connected state shows the active proxy summary line
 - [ ] No Device PIN UI is shown
 - [ ] Forget saved data button works
 
@@ -67,6 +75,7 @@ Use this checklist before submitting to the Chrome Web Store.
 - [ ] CSP is present in manifest
 - [ ] ZIP build excludes dev files, `.git`, `.DS_Store`, and secrets
 - [ ] No remote scripts, analytics, or hidden network requests from extension code
+- [ ] No connection test request is made until **Test connection** is clicked
 
 ## Documentation
 

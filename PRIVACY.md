@@ -58,6 +58,14 @@ We do not share user data with third parties.
 
 The extension does not include analytics SDKs, advertising SDKs, or remote configuration services.
 
+## Connection test
+
+The **Test connection** button is optional and runs only when you click it. When clicked, the extension requests
+`https://www.gstatic.com/generate_204` from the background service worker and treats HTTP 204 as success.
+
+This check is never automatic. It does not send proxy settings, credentials, profile names, browsing history, or any
+data to the developer.
+
 ## Remote code
 
 The extension does not load remote code. All extension code is packaged locally with the extension.

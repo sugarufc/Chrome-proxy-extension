@@ -5,6 +5,8 @@ importScripts("shared.js", "storage-manager.js");
 const AUTH_RETRY_LIMIT = 2;
 const AUTH_ATTEMPT_MAX_ENTRIES = 200;
 const AUTH_ATTEMPT_TTL_MS = 5 * 60 * 1000;
+const TEST_CONNECTION_URL = "https://www.gstatic.com/generate_204";
+const TEST_CONNECTION_TIMEOUT_MS = 10_000;
 const authAttemptsByRequest = new Map();
 const {
   DEFAULT_DIRECT_CONNECT_LIST,
@@ -15,6 +17,7 @@ const {
   buildProxyConfig,
   sanitizeParsedProxy,
   sanitizeErrorMessage,
+  describeProxyError,
 } = ProxyShared;
 
 function proxySettingsSet(config) {
@@ -174,6 +177,10 @@ async function getStatusPayload(options = {}) {
   const sessionPassword = sessionConnected ? await ProxyStorage.resolveSessionPassword() : "";
   const savedPassword = state.rememberPassword && state.savedPassword ? state.savedPassword : "";
 
+  // The popup receives the password through the dedicated field below; keep the raw
+  // secret out of the general state object.
+  delete state.savedPassword;
+
   return {
     state,
     sessionConnected,
@@ -271,6 +278,41 @@ async function selectProfile(message) {
   return getStatusPayload();
 }
 
+async function testConnection() {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TEST_CONNECTION_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(TEST_CONNECTION_URL, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+
+    if (response.status !== 204) {
+      throw new Error(`Connection test failed with HTTP ${response.status}.`);
+    }
+
+    const payload = await getStatusPayload();
+    const viaProxy = Boolean(payload.state.active && payload.sessionConnected);
+
+    return {
+      ...payload,
+      testResult: {
+        ok: true,
+        status: response.status,
+        message: viaProxy
+          ? "Connection test OK through the active proxy."
+          : "Connection test OK (no proxy connected — direct connection).",
+      },
+    };
+  } catch (error) {
+    const message = error && error.name === "AbortError" ? "Connection test timed out." : error.message;
+    throw new Error(message || "Connection test failed.");
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 async function runRuntimeCommand(message) {
   switch (message && message.command) {
     case "connect":
@@ -289,6 +331,8 @@ async function runRuntimeCommand(message) {
       return deleteProfile(message);
     case "selectProfile":
       return selectProfile(message);
+    case "testConnection":
+      return testConnection();
     default:
       throw new Error("Unknown command.");
   }
@@ -335,14 +379,17 @@ async function restoreProxyForCurrentSession() {
   }
 
   const state = await ProxyStorage.getFullState();
-  if (!state.active || !state.proxyProfile) {
+  // Restore the proxy that was actually connected, not the profile currently
+  // selected in the form (activeProxy falls back for pre-2.3.0 data).
+  const connectedProfile = state.activeProxy || state.proxyProfile;
+  if (!state.active || !connectedProfile) {
     setActionIcon(false);
     return;
   }
 
   try {
     const directConnectList = parseDirectConnectList(state.directConnectList || DEFAULT_DIRECT_CONNECT_LIST);
-    const config = buildProxyConfig(state.proxyProfile, directConnectList);
+    const config = buildProxyConfig(connectedProfile, directConnectList);
     await proxySettingsSet(config);
     setActionIcon(true);
   } catch (error) {
@@ -368,7 +415,7 @@ chrome.runtime.onStartup.addListener(async () => {
 
 chrome.proxy.onProxyError.addListener((details) => {
   const message = details && details.error ? details.error : "Proxy connection error";
-  markProxyWarning(message);
+  markProxyWarning(describeProxyError(message));
 });
 
 chrome.runtime.onMessage.addListener(handleRuntimeMessage);

@@ -108,6 +108,7 @@
           <textarea id="directConnectList" rows="2" spellcheck="false"></textarea>
         </div>
 
+        <p id="activeProxyInfo" class="helper-text active-proxy-info" hidden></p>
         <p id="errorMessage" class="error-message" role="alert" hidden></p>
         <p id="warningMessage" class="warning-message" role="status" hidden></p>
 
@@ -115,6 +116,10 @@
           <button id="connectButton" class="button button-primary" type="button" disabled>Connect</button>
           <button id="disconnectButton" class="button button-secondary" type="button">Disconnect</button>
         </div>
+
+        <button id="testConnectionButton" class="button button-secondary button-block" type="button">
+          Test connection
+        </button>
 
         <button id="forgetButton" class="button button-danger button-block" type="button">Forget saved data</button>
       </section>
