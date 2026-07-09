@@ -9,11 +9,9 @@ const TEST_CONNECTION_URL = "https://www.gstatic.com/generate_204";
 const TEST_CONNECTION_TIMEOUT_MS = 10_000;
 const authAttemptsByRequest = new Map();
 const {
-  DEFAULT_DIRECT_CONNECT_LIST,
   buildProfileFromFields,
   validatePasswordForProfile,
   validateChromeProxySupport,
-  parseDirectConnectList,
   buildProxyConfig,
   sanitizeParsedProxy,
   sanitizeErrorMessage,
@@ -217,20 +215,17 @@ async function getCurrentStatus() {
 async function connectProxy(message) {
   const profile = buildProfileFromFields(message.profile || {});
   const password = String(message.password || "");
-  const directConnectList = message.directConnectList || DEFAULT_DIRECT_CONNECT_LIST;
 
   validatePasswordForProfile(profile, password);
   validateChromeProxySupport(profile, password);
 
-  const parsedDirectConnectList = parseDirectConnectList(directConnectList);
-  const config = buildProxyConfig(profile, parsedDirectConnectList);
+  const config = buildProxyConfig(profile);
 
   await proxySettingsSet(config);
   await ProxyStorage.saveConnection({
     profile,
     password,
     rememberPassword: Boolean(message.rememberPassword),
-    directConnectList,
     parsedProxy: sanitizeParsedProxy(profile, Boolean(password)),
     profileId: message.profileId || "",
   });
@@ -388,8 +383,7 @@ async function restoreProxyForCurrentSession() {
   }
 
   try {
-    const directConnectList = parseDirectConnectList(state.directConnectList || DEFAULT_DIRECT_CONNECT_LIST);
-    const config = buildProxyConfig(connectedProfile, directConnectList);
+    const config = buildProxyConfig(connectedProfile);
     await proxySettingsSet(config);
     setActionIcon(true);
   } catch (error) {

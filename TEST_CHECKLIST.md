@@ -29,8 +29,7 @@ Use this checklist before submitting to the Chrome Web Store.
 ## Session and storage behavior
 
 - [ ] Default password storage uses session only
-- [ ] Direct connect list defaults to `localhost, 127.0.0.1, <local>`
-- [ ] Edited direct connect list is saved and used on reconnect
+- [ ] Local addresses (`localhost`, `127.0.0.1`, `<local>`) always connect directly, without the proxy
 - [ ] Existing single `proxyProfile` is migrated to a `Default` saved profile
 - [ ] Saved profile list survives popup close/reopen
 - [ ] Deleting a saved profile removes it from the list without exposing passwords
@@ -62,8 +61,6 @@ Use this checklist before submitting to the Chrome Web Store.
 - [ ] Remember password checkbox works
 - [ ] Save as profile button stores name, scheme, host, port, and username only
 - [ ] Delete profile button removes selected profile
-- [ ] Direct connect list field accepts comma-separated and newline-separated entries
-- [ ] Direct connect list field rejects entries with spaces
 - [ ] Remember password warning text is visible
 - [ ] Connected state shows the active proxy summary line
 - [ ] No Device PIN UI is shown

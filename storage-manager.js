@@ -18,7 +18,6 @@
     SELECTED_PROFILE_ID_KEY,
     ACTIVE_PROFILE_ID_KEY,
     LOCAL_PASSWORD_KEY,
-    "directConnectList",
     "parsedProxy",
     "lastError",
     "lastProxyError",
@@ -28,6 +27,7 @@
     "proxyAuth",
     "encryptionKey",
     "bypassList",
+    "directConnectList",
     "encryptedPassword",
     "encryptionSalt",
     "pinVerifier",
@@ -231,7 +231,7 @@
     ]);
   }
 
-  async function saveConnection({ profile, password, rememberPassword, directConnectList, parsedProxy, profileId }) {
+  async function saveConnection({ profile, password, rememberPassword, parsedProxy, profileId }) {
     const localPayload = {
       active: true,
       rememberPassword: Boolean(rememberPassword),
@@ -240,7 +240,6 @@
       // using this even if the user switches or edits profiles without reconnecting.
       [ACTIVE_PROXY_KEY]: profile,
       [ACTIVE_PROFILE_ID_KEY]: profileId || "",
-      directConnectList,
       parsedProxy,
       lastError: "",
       lastProxyError: "",
@@ -256,7 +255,7 @@
       await removeLocal([LOCAL_PASSWORD_KEY]);
     }
 
-    await removeLocal(LEGACY_SECRET_KEYS.filter((key) => key !== "bypassList"));
+    await removeLocal(LEGACY_SECRET_KEYS);
     await setLocal(localPayload);
 
     await setSession({
@@ -323,7 +322,7 @@
   }
 
   async function cleanupLegacySecrets() {
-    const state = await getLocal(["proxyProfile", "proxyUrl", "bypassList"]);
+    const state = await getLocal(["proxyProfile", "proxyUrl"]);
 
     if (!state.proxyProfile && state.proxyUrl) {
       try {
@@ -335,7 +334,6 @@
             port: parsed.port,
             username: parsed.username || "",
           },
-          directConnectList: state.bypassList || ProxyShared.DEFAULT_DIRECT_CONNECT_LIST,
         });
       } catch (_error) {
         // Skip invalid legacy URL values.
