@@ -121,6 +121,31 @@ test("sanitizeErrorMessage redacts URLs, credentials, and auth headers", () => {
   assert.equal(sanitizeErrorMessage("x".repeat(500)).length, 300);
 });
 
+test("sanitizeErrorMessage keeps user-facing validation messages readable", () => {
+  const { sanitizeErrorMessage } = shared();
+
+  assert.equal(
+    sanitizeErrorMessage("Password is required when username is provided."),
+    "Password is required when username is provided.",
+  );
+  assert.equal(sanitizeErrorMessage("Proxy URL is required."), "Proxy URL is required.");
+  assert.equal(
+    sanitizeErrorMessage("Invalid password encoding. URL-encode special characters."),
+    "Invalid password encoding. URL-encode special characters.",
+  );
+});
+
+test("describeProxyError adds hints for known Chrome proxy errors and passes others through", () => {
+  const { describeProxyError } = shared();
+
+  assert.match(describeProxyError("net::ERR_PROXY_CONNECTION_FAILED"), /could not connect to the proxy server/);
+  assert.match(describeProxyError("net::ERR_TUNNEL_CONNECTION_FAILED"), /could not connect to the proxy server/);
+  assert.match(describeProxyError("net::ERR_NAME_NOT_RESOLVED"), /hostname could not be resolved/);
+  assert.match(describeProxyError("net::ERR_TIMED_OUT"), /did not respond in time/);
+  assert.equal(describeProxyError("net::ERR_UNRECOGNIZED"), "net::ERR_UNRECOGNIZED");
+  assert.equal(describeProxyError(""), "Proxy connection error");
+});
+
 test("parseDirectConnectList returns trimmed entries and default bypass list", () => {
   const { DEFAULT_DIRECT_CONNECT_LIST, parseDirectConnectList } = shared();
 

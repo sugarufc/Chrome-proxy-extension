@@ -148,9 +148,32 @@
     text = text.replace(/\S+:\S+@\S+/gi, "[redacted]");
     text = text.replace(/(?:username|password|credential|proxy url)\s*[:=]\s*\S+/gi, "[redacted]");
     text = text.replace(/(?:Proxy-Authorization|Authorization)\s*[:=]?\s*\S+/gi, "[redacted]");
-    text = text.replace(/(?:password|username|credential|proxy url)[^\n]*/gi, "[redacted]");
 
     return text.slice(0, 300);
+  }
+
+  const PROXY_ERROR_HINTS = [
+    [
+      /ERR_(?:PROXY_CONNECTION|TUNNEL_CONNECTION)_FAILED/i,
+      "Chrome could not connect to the proxy server. Check the host and port, confirm the proxy is online, and make sure the proxy type matches your provider.",
+    ],
+    [/ERR_NAME_NOT_RESOLVED/i, "The proxy hostname could not be resolved. Check the host for typos."],
+    [/ERR_SOCKS_CONNECTION_FAILED/i, "The SOCKS proxy refused the connection. Check the host, port, and proxy type."],
+    [/ERR_PROXY_AUTH_UNSUPPORTED/i, "The proxy requested an authentication method Chrome does not support."],
+    [/ERR_(?:CONNECTION_)?TIMED_OUT/i, "The proxy did not respond in time. It may be offline or unreachable."],
+    [/ERR_INTERNET_DISCONNECTED/i, "No internet connection."],
+  ];
+
+  function describeProxyError(message) {
+    const text = String(message || "").trim() || "Proxy connection error";
+
+    for (const [pattern, hint] of PROXY_ERROR_HINTS) {
+      if (pattern.test(text)) {
+        return `${text} — ${hint}`;
+      }
+    }
+
+    return text;
   }
 
   function parseDirectConnectList(input) {
@@ -209,6 +232,7 @@
     buildProxyConfig,
     sanitizeParsedProxy,
     sanitizeErrorMessage,
+    describeProxyError,
   };
 
   if (typeof globalThis !== "undefined") {

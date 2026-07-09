@@ -121,7 +121,11 @@ function createChromeMock({ local = {}, session = {} } = {}) {
 function createRuntimeContext(options = {}) {
   const chrome = options.chrome || createChromeMock();
   const context = {
+    AbortController,
     chrome,
+    clearTimeout,
+    fetch: options.fetch,
+    setTimeout,
     URL,
   };
 

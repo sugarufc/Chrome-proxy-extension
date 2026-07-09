@@ -48,6 +48,44 @@ test("saveConnection stores remembered password locally only when requested", as
   assert.equal(await storage.resolveSavedPassword(), "secret");
 });
 
+test("saveConnection snapshots the connected proxy so profile switching cannot change auth", async () => {
+  const { chrome, storage } = createStorage();
+  const connectedProfile = { scheme: "http", host: "proxy-a.example.com", port: 8080, username: "user" };
+
+  await storage.saveConnection({
+    profile: connectedProfile,
+    password: "secret",
+    rememberPassword: false,
+    directConnectList: "localhost",
+    parsedProxy: null,
+  });
+
+  assert.deepEqual(plain(chrome.storage.local.data.activeProxy), connectedProfile);
+
+  // Simulate the user selecting another profile in the popup without reconnecting.
+  await storage.setLocal({
+    proxyProfile: { scheme: "http", host: "proxy-b.example.com", port: 9090, username: "user" },
+  });
+
+  const authState = await storage.getAuthState();
+  assert.equal(authState.proxyAuth.host, "proxy-a.example.com");
+  assert.equal(authState.proxyAuth.port, 8080);
+});
+
+test("setDisconnected clears the connected proxy snapshot", async () => {
+  const { chrome, storage } = createStorage(
+    {
+      active: true,
+      activeProxy: { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" },
+    },
+    { sessionConnected: true, sessionPassword: "secret" },
+  );
+
+  await storage.setDisconnected();
+
+  assert.equal(chrome.storage.local.data.activeProxy, undefined);
+});
+
 test("getAuthState requires active local state and active session state", async () => {
   const profile = { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" };
   const { storage } = createStorage(

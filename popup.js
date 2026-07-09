@@ -52,8 +52,10 @@
     const errorMessage = document.getElementById("errorMessage");
     const warningMessage = document.getElementById("warningMessage");
     const statusBadge = document.getElementById("statusBadge");
+    const activeProxyInfo = document.getElementById("activeProxyInfo");
     const connectButton = document.getElementById("connectButton");
     const disconnectButton = document.getElementById("disconnectButton");
+    const testConnectionButton = document.getElementById("testConnectionButton");
     const forgetButton = document.getElementById("forgetButton");
     const socks5AuthNotice = document.getElementById("socks5AuthNotice");
 
@@ -74,14 +76,16 @@
     function setBusy(isBusy) {
       connectButton.disabled = isBusy || !disclaimerAccepted;
       disconnectButton.disabled = isBusy;
+      testConnectionButton.disabled = isBusy;
       forgetButton.disabled = isBusy;
       saveProfileButton.disabled = isBusy;
       deleteProfileButton.disabled = isBusy || !profileSelect.value;
     }
 
-    function setProxyWarning(message) {
+    function setProxyWarning(message, options = {}) {
       warningMessage.textContent = message || "";
       warningMessage.hidden = !message;
+      warningMessage.classList.toggle("success", Boolean(message && options.success));
     }
 
     function setErrorMessage(message) {
@@ -200,9 +204,25 @@
       }
     }
 
+    function updateActiveProxyInfo(state, connected) {
+      const parsed = state.parsedProxy;
+
+      if (connected && parsed && parsed.host) {
+        activeProxyInfo.textContent = `Active proxy: ${parsed.scheme}://${parsed.host}:${parsed.port}`;
+        activeProxyInfo.hidden = false;
+        return;
+      }
+
+      activeProxyInfo.textContent = "";
+      activeProxyInfo.hidden = true;
+    }
+
     function applyStatusResponse(response) {
       const state = response.state || {};
       const sessionConnected = Boolean(response.sessionConnected);
+      const connected = response.status === "connected" || Boolean(state.active && sessionConnected);
+
+      updateActiveProxyInfo(state, connected);
 
       if (response.status === "warning") {
         setStatus("warning", response.message);
@@ -282,10 +302,9 @@
         return;
       }
 
-      const parsed = parseCurrentForm({ showError: false });
+      const parsed = parseCurrentForm({ showError: true });
       if (!parsed) {
         setStatus("error");
-        setErrorMessage("Proxy settings are incomplete.");
         return;
       }
 
@@ -425,6 +444,21 @@
       }
     }
 
+    async function testConnection() {
+      setBusy(true);
+      try {
+        const response = await sendCommand("testConnection");
+        applyStatusResponse(response);
+        if (response.testResult && response.testResult.message) {
+          setProxyWarning(response.testResult.message, { success: Boolean(response.testResult.ok) });
+        }
+      } catch (error) {
+        setStatus("error", error.message);
+      } finally {
+        setBusy(false);
+      }
+    }
+
     disclaimerCheckbox.addEventListener("change", () => {
       acceptDisclaimerButton.disabled = !disclaimerCheckbox.checked;
     });
@@ -440,6 +474,7 @@
 
     connectButton.addEventListener("click", connect);
     disconnectButton.addEventListener("click", disconnect);
+    testConnectionButton.addEventListener("click", testConnection);
     forgetButton.addEventListener("click", forgetSavedData);
     saveProfileButton.addEventListener("click", saveCurrentProfile);
     deleteProfileButton.addEventListener("click", deleteSelectedProfile);

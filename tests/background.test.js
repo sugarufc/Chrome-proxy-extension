@@ -99,6 +99,49 @@ test("proxy auth challenge rejects non-matching proxy port", async () => {
   assert.deepEqual(plain(result), {});
 });
 
+test("proxy auth answers for the connected proxy snapshot, not the selected form profile", async () => {
+  const { context } = loadBackground(
+    {
+      active: true,
+      proxyProfile: {
+        scheme: "http",
+        host: "other.example.com",
+        port: 9090,
+        username: "user",
+      },
+      activeProxy: {
+        scheme: "http",
+        host: "proxy.example.com",
+        port: 8080,
+        username: "user",
+      },
+    },
+    {
+      sessionConnected: true,
+      sessionPassword: "secret",
+    },
+  );
+
+  const granted = await callAuthRequired(context, {
+    requestId: "snapshot-match",
+    isProxy: true,
+    challenger: { host: "proxy.example.com", port: 8080 },
+  });
+  assert.deepEqual(plain(granted), {
+    authCredentials: {
+      username: "user",
+      password: "secret",
+    },
+  });
+
+  const rejected = await callAuthRequired(context, {
+    requestId: "form-profile-challenge",
+    isProxy: true,
+    challenger: { host: "other.example.com", port: 9090 },
+  });
+  assert.deepEqual(plain(rejected), {});
+});
+
 test("proxy auth attempts are bounded without completed/error webRequest listeners", async () => {
   const { context } = loadBackground(
     {
