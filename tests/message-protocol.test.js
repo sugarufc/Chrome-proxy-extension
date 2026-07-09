@@ -41,13 +41,15 @@ test("popup delegates proxy, action, and storage mutations to background message
   assert.match(source, /chrome\.runtime\.sendMessage/);
 });
 
-test("background connect message applies proxy settings, icon, and storage state", async () => {
-  const chrome = loadBackground(
-    {
-      disclaimerAccepted: true,
+test("background connect message applies proxy settings, runs the test, and stores state", async () => {
+  const fetchCalls = [];
+  const chrome = loadBackgroundWithOptions({
+    chrome: createChromeMock({ local: { disclaimerAccepted: true } }),
+    fetch: async (url, options) => {
+      fetchCalls.push({ url, options });
+      return { status: 204 };
     },
-    {},
-  );
+  });
 
   const response = await sendBackgroundMessage(chrome, {
     command: "connect",
@@ -58,10 +60,12 @@ test("background connect message applies proxy settings, icon, and storage state
       username: "user",
     },
     password: "secret",
-    rememberPassword: false,
   });
 
   assert.equal(response.ok, true);
+  assert.equal(response.testResult.ok, true);
+  assert.equal(typeof response.testResult.latencyMs, "number");
+  assert.equal(fetchCalls.length, 1);
   assert.equal(chrome.proxy.settings.setCalls.length, 1);
   assert.deepEqual(plain(chrome.proxy.settings.setCalls[0].value.rules.bypassList), [
     "localhost",
@@ -69,10 +73,9 @@ test("background connect message applies proxy settings, icon, and storage state
     "<local>",
   ]);
   assert.equal(chrome.storage.local.data.active, true);
-  assert.equal(chrome.storage.local.data.directConnectList, undefined);
   assert.equal(chrome.storage.local.data.proxyProfile.host, "proxy.example.com");
   assert.equal(chrome.storage.local.data.activeProxy.host, "proxy.example.com");
-  assert.equal(chrome.storage.local.data.savedPassword, undefined);
+  assert.equal(chrome.storage.local.data.savedPassword, "secret");
   assert.equal(chrome.storage.session.data.sessionPassword, "secret");
   assert.equal(chrome.action.iconCalls.length, 1);
 });
@@ -81,7 +84,6 @@ test("background status payload exposes the password only through the dedicated 
   const chrome = loadBackground(
     {
       disclaimerAccepted: true,
-      rememberPassword: true,
       savedPassword: "secret",
     },
     {},
@@ -112,6 +114,7 @@ test("background testConnection fetches generate_204 only after explicit command
   assert.equal(response.ok, true);
   assert.equal(response.testResult.ok, true);
   assert.equal(response.testResult.status, 204);
+  assert.equal(typeof response.testResult.latencyMs, "number");
   assert.equal(fetchCalls.length, 1);
   assert.equal(fetchCalls[0].url, "https://www.gstatic.com/generate_204");
 });

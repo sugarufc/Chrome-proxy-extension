@@ -34,3 +34,10 @@ test("manifest requests only the permissions the extension uses", () => {
   assert.deepEqual(manifest.permissions.sort(), ["proxy", "storage", "webRequest", "webRequestAuthProvider"]);
   assert.deepEqual(manifest.host_permissions, ["<all_urls>"]);
 });
+
+test("manifest declares the proxy toggle keyboard command", () => {
+  const manifest = readJson("manifest.json");
+
+  assert.ok(manifest.commands && manifest.commands["toggle-proxy"]);
+  assert.ok(manifest.commands["toggle-proxy"].suggested_key.default);
+});

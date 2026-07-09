@@ -59,6 +59,74 @@ test("parseProxyUrl validates required fields and port boundaries", () => {
   assert.throws(() => parseProxyUrl("http://u:p@example.com:8080/path"), /must not include path/);
 });
 
+test("parseProxyInput accepts URLs, host:port, user:pass@host:port, and host:port:user:pass", () => {
+  const { parseProxyInput } = shared();
+
+  assert.deepEqual(plain(parseProxyInput("socks5://127.0.0.1:1080")), {
+    scheme: "socks5",
+    username: "",
+    password: "",
+    host: "127.0.0.1",
+    port: 1080,
+  });
+
+  assert.deepEqual(plain(parseProxyInput(" proxy.example.com:8080 ")), {
+    scheme: "http",
+    username: "",
+    password: "",
+    host: "proxy.example.com",
+    port: 8080,
+  });
+
+  assert.deepEqual(plain(parseProxyInput("user:pass@proxy.example.com:8080")), {
+    scheme: "http",
+    username: "user",
+    password: "pass",
+    host: "proxy.example.com",
+    port: 8080,
+  });
+
+  assert.deepEqual(plain(parseProxyInput("138.249.25.150:6743:user73037:pa:ss")), {
+    scheme: "http",
+    username: "user73037",
+    password: "pa:ss",
+    host: "138.249.25.150",
+    port: 6743,
+  });
+
+  assert.throws(() => parseProxyInput(""), /required/);
+  assert.throws(() => parseProxyInput("ftp://example.com:21"), /Unsupported proxy scheme/);
+  assert.throws(() => parseProxyInput("proxy.example.com"), /port/);
+});
+
+test("formatProxyString renders a profile with an optional password placeholder", () => {
+  const { formatProxyString, PASSWORD_MASK } = shared();
+  const profile = { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" };
+
+  assert.equal(formatProxyString(profile), "http://user@proxy.example.com:8080");
+  assert.equal(
+    formatProxyString(profile, { password: PASSWORD_MASK }),
+    `http://user:${PASSWORD_MASK}@proxy.example.com:8080`,
+  );
+  assert.equal(
+    formatProxyString({ scheme: "socks5", host: "127.0.0.1", port: 1080, username: "" }),
+    "socks5://127.0.0.1:1080",
+  );
+  assert.equal(formatProxyString(null), "");
+});
+
+test("parseProxyInput round-trips a masked formatProxyString value", () => {
+  const { parseProxyInput, formatProxyString, PASSWORD_MASK } = shared();
+  const profile = { scheme: "https", host: "proxy.example.com", port: 8443, username: "user" };
+
+  const masked = formatProxyString(profile, { password: PASSWORD_MASK });
+  const parsed = parseProxyInput(masked);
+
+  assert.equal(parsed.password, PASSWORD_MASK);
+  assert.equal(parsed.username, "user");
+  assert.equal(parsed.host, "proxy.example.com");
+});
+
 test("buildProfileFromFields normalizes valid fields and rejects invalid profile values", () => {
   const { buildProfileFromFields } = shared();
 

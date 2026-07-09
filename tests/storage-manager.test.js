@@ -13,37 +13,36 @@ function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-test("saveConnection stores password in session by default and not in local storage", async () => {
-  const { chrome, storage } = createStorage();
+test("saveConnection stores the password locally and in the session for auto-reconnect", async () => {
+  const { chrome, storage } = createStorage({ rememberPassword: true });
   const profile = { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" };
 
   await storage.saveConnection({
     profile,
     password: "secret",
-    rememberPassword: false,
     parsedProxy: { scheme: "http", host: "proxy.example.com", port: 8080 },
   });
 
   assert.equal(chrome.storage.local.data.active, true);
-  assert.equal(chrome.storage.local.data.savedPassword, undefined);
+  assert.equal(chrome.storage.local.data.savedPassword, "secret");
   assert.equal(chrome.storage.session.data.sessionPassword, "secret");
   assert.equal(chrome.storage.session.data.sessionConnected, true);
+  assert.equal(await storage.resolveSavedPassword(), "secret");
+  assert.equal(chrome.storage.local.data.rememberPassword, undefined);
 });
 
-test("saveConnection stores remembered password locally only when requested", async () => {
-  const { chrome, storage } = createStorage();
-  const profile = { scheme: "https", host: "proxy.example.com", port: 8443, username: "user" };
+test("saveConnection without a password removes any previously saved password", async () => {
+  const { chrome, storage } = createStorage({ savedPassword: "old-secret" });
+  const profile = { scheme: "socks5", host: "127.0.0.1", port: 1080, username: "" };
 
   await storage.saveConnection({
     profile,
-    password: "secret",
-    rememberPassword: true,
+    password: "",
     parsedProxy: null,
   });
 
-  assert.equal(chrome.storage.local.data.rememberPassword, true);
-  assert.equal(chrome.storage.local.data.savedPassword, "secret");
-  assert.equal(await storage.resolveSavedPassword(), "secret");
+  assert.equal(chrome.storage.local.data.savedPassword, undefined);
+  assert.equal(chrome.storage.session.data.sessionConnected, true);
 });
 
 test("saveConnection snapshots the connected proxy so profile switching cannot change auth", async () => {
@@ -53,7 +52,6 @@ test("saveConnection snapshots the connected proxy so profile switching cannot c
   await storage.saveConnection({
     profile: connectedProfile,
     password: "secret",
-    rememberPassword: false,
     parsedProxy: null,
   });
 
@@ -109,11 +107,10 @@ test("getAuthState requires active local state and active session state", async 
   });
 });
 
-test("setDisconnected clears session and removes local password unless rememberPassword is enabled", async () => {
+test("setDisconnected clears the session but keeps the saved password for reconnecting", async () => {
   const { chrome, storage } = createStorage(
     {
       active: true,
-      rememberPassword: false,
       savedPassword: "secret",
     },
     {
@@ -125,21 +122,8 @@ test("setDisconnected clears session and removes local password unless rememberP
   await storage.setDisconnected();
 
   assert.equal(chrome.storage.local.data.active, false);
-  assert.equal(chrome.storage.local.data.savedPassword, undefined);
-  assert.deepEqual(plain(chrome.storage.session.data), {});
-});
-
-test("setDisconnected keeps local password when rememberPassword is enabled", async () => {
-  const { chrome, storage } = createStorage({
-    active: true,
-    rememberPassword: true,
-    savedPassword: "secret",
-  });
-
-  await storage.setDisconnected();
-
-  assert.equal(chrome.storage.local.data.active, false);
   assert.equal(chrome.storage.local.data.savedPassword, "secret");
+  assert.deepEqual(plain(chrome.storage.session.data), {});
 });
 
 test("forgetAllData removes local, session, and legacy secret keys", async () => {
