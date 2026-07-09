@@ -3,6 +3,8 @@
 
   // Local addresses always connect directly so local servers and forwarders keep working.
   const DEFAULT_BYPASS_LIST = Object.freeze(["localhost", "127.0.0.1", "<local>"]);
+  // Placeholder shown instead of the real password when a saved proxy string is displayed.
+  const PASSWORD_MASK = "******";
   const SUPPORTED_SCHEMES = new Set(["http", "https", "socks5"]);
   const SCHEMES_REQUIRING_AUTH = new Set(["http", "https"]);
   const SCHEMES_WITHOUT_EXTENSION_AUTH = new Set(["socks5"]);
@@ -90,6 +92,46 @@
       host,
       port,
     };
+  }
+
+  function parseProxyInput(input) {
+    const raw = String(input || "").trim();
+
+    if (!raw) {
+      throw new Error("Proxy address is required.");
+    }
+
+    if (/^[a-z0-9]+:\/\//i.test(raw)) {
+      return parseProxyUrl(raw);
+    }
+
+    // Common seller format: host:port:user:pass (password may contain colons).
+    const parts = raw.split(":");
+    if (parts.length >= 4 && !raw.includes("@") && !raw.includes("/")) {
+      const [host, port, username] = parts;
+      const password = parts.slice(3).join(":");
+      return parseProxyUrl(`http://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}`);
+    }
+
+    // host:port or user:pass@host:port — default to HTTP.
+    return parseProxyUrl(`http://${raw}`);
+  }
+
+  function formatProxyString(profile, options = {}) {
+    if (!profile || !profile.host) {
+      return "";
+    }
+
+    let auth = "";
+    if (profile.username) {
+      auth = encodeURIComponent(profile.username);
+      if (options.password) {
+        auth += `:${options.password}`;
+      }
+      auth += "@";
+    }
+
+    return `${profile.scheme}://${auth}${profile.host}:${profile.port}`;
   }
 
   function buildProfileFromFields({ scheme, host, port, username }) {
@@ -207,10 +249,13 @@
 
   const shared = {
     DEFAULT_BYPASS_LIST,
+    PASSWORD_MASK,
     SUPPORTED_SCHEMES,
     SCHEMES_REQUIRING_AUTH,
     SCHEMES_WITHOUT_EXTENSION_AUTH,
     parseProxyUrl,
+    parseProxyInput,
+    formatProxyString,
     buildProfileFromFields,
     validatePasswordForProfile,
     validateChromeProxySupport,

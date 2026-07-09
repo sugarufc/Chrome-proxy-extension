@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Effective date:** June 30, 2026
+**Effective date:** July 9, 2026
 
 **Extension name:** Proxy Switcher
 
@@ -35,8 +35,7 @@ We do not collect:
 The extension may store the following locally in Chrome extension storage on your device:
 
 - proxy type, host, port, and username
-- proxy password in `chrome.storage.session` by default
-- proxy password in `chrome.storage.local` only if you enable **Remember password on this device**
+- proxy password in `chrome.storage.local` (and in `chrome.storage.session` while connected)
 - connection state and local error messages required for the extension to function
 - a disclaimer acceptance flag
 
@@ -46,11 +45,11 @@ The extension does not store full proxy URLs containing credentials.
 
 ## Password storage behavior
 
-- Default: password stays in the current browser session only and is cleared when the browser session ends
-- Optional: if you enable **Remember password on this device**, the password is stored locally in your Chrome profile
-- Remembered passwords are not encrypted by the extension
-- Do not enable Remember password on shared or untrusted devices
-- After browser restart, the proxy is not connected automatically; you must click **Connect** again
+- The proxy password is stored locally in your Chrome profile so the proxy can reconnect automatically after a browser restart
+- Stored passwords are not encrypted by the extension
+- Do not use this extension on shared or untrusted devices
+- If the proxy was on when the browser closed, the extension reconnects it automatically on the next start
+- **Forget saved data** removes the stored password and all other saved settings at any time
 
 ## Data sharing
 
@@ -60,11 +59,14 @@ The extension does not include analytics SDKs, advertising SDKs, or remote confi
 
 ## Connection test
 
-The **Test connection** button is optional and runs only when you click it. When clicked, the extension requests
-`https://www.gstatic.com/generate_204` from the background service worker and treats HTTP 204 as success.
+The extension verifies connectivity by requesting `https://www.gstatic.com/generate_204` from the background service
+worker and treating HTTP 204 as success. This check runs:
 
-This check is never automatic. It does not send proxy settings, credentials, profile names, browsing history, or any
-data to the developer.
+- when you turn the proxy on (including via the keyboard shortcut), to confirm the proxy works
+- when you click the status line in the popup
+
+The request contains no proxy settings, credentials, profile names, browsing history, or any other user data, and
+nothing is sent to the developer. No connectivity checks run while the proxy is off.
 
 ## Remote code
 

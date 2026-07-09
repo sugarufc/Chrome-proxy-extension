@@ -173,7 +173,7 @@ async function getStatusPayload(options = {}) {
   const state = await ProxyStorage.getFullState();
   const sessionConnected = await ProxyStorage.isSessionConnected();
   const sessionPassword = sessionConnected ? await ProxyStorage.resolveSessionPassword() : "";
-  const savedPassword = state.rememberPassword && state.savedPassword ? state.savedPassword : "";
+  const savedPassword = state.savedPassword || "";
 
   // The popup receives the password through the dedicated field below; keep the raw
   // secret out of the general state object.
@@ -190,26 +190,36 @@ async function getStatusPayload(options = {}) {
 
 async function getCurrentStatus() {
   await ProxyStorage.configureTrustedStorageAccess();
-  await migrateLegacyStorage();
+  await restoreProxyForCurrentSession();
 
   const state = await ProxyStorage.getFullState();
   const sessionConnected = await ProxyStorage.isSessionConnected();
-  if (state.active && !sessionConnected) {
-    try {
-      await proxySettingsClear();
-    } catch (_error) {
-      // Ignore cleanup errors for stale active state.
-    }
-    await ProxyStorage.setLocal({ active: false, lastProxyError: "" });
-    setActionIcon(false);
-    return getStatusPayload({
-      status: "warning",
-      message: "Session expired. Click Connect to use the proxy again.",
-    });
-  }
-
   setActionIcon(Boolean(state.active && sessionConnected));
   return getStatusPayload();
+}
+
+async function runConnectionTest() {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), TEST_CONNECTION_TIMEOUT_MS);
+  const startedAt = Date.now();
+
+  try {
+    const response = await fetch(TEST_CONNECTION_URL, {
+      cache: "no-store",
+      signal: controller.signal,
+    });
+
+    if (response.status !== 204) {
+      throw new Error(`Connection test failed with HTTP ${response.status}.`);
+    }
+
+    return { ok: true, status: response.status, latencyMs: Date.now() - startedAt };
+  } catch (error) {
+    const message = error && error.name === "AbortError" ? "Connection test timed out." : error && error.message;
+    return { ok: false, message: sanitizeErrorMessage(message || "Connection test failed.") };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 async function connectProxy(message) {
@@ -225,13 +235,20 @@ async function connectProxy(message) {
   await ProxyStorage.saveConnection({
     profile,
     password,
-    rememberPassword: Boolean(message.rememberPassword),
     parsedProxy: sanitizeParsedProxy(profile, Boolean(password)),
     profileId: message.profileId || "",
   });
   setActionIcon(true);
 
-  return getStatusPayload({ status: "connected" });
+  const testResult = await runConnectionTest();
+  if (!testResult.ok) {
+    await markProxyWarning(`Connection test failed: ${testResult.message}`);
+  }
+
+  return {
+    ...(await getStatusPayload({ status: "connected" })),
+    testResult,
+  };
 }
 
 async function disconnectProxy() {
@@ -274,38 +291,12 @@ async function selectProfile(message) {
 }
 
 async function testConnection() {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), TEST_CONNECTION_TIMEOUT_MS);
+  const testResult = await runConnectionTest();
 
-  try {
-    const response = await fetch(TEST_CONNECTION_URL, {
-      cache: "no-store",
-      signal: controller.signal,
-    });
-
-    if (response.status !== 204) {
-      throw new Error(`Connection test failed with HTTP ${response.status}.`);
-    }
-
-    const payload = await getStatusPayload();
-    const viaProxy = Boolean(payload.state.active && payload.sessionConnected);
-
-    return {
-      ...payload,
-      testResult: {
-        ok: true,
-        status: response.status,
-        message: viaProxy
-          ? "Connection test OK through the active proxy."
-          : "Connection test OK (no proxy connected — direct connection).",
-      },
-    };
-  } catch (error) {
-    const message = error && error.name === "AbortError" ? "Connection test timed out." : error.message;
-    throw new Error(message || "Connection test failed.");
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  return {
+    ...(await getStatusPayload()),
+    testResult,
+  };
 }
 
 async function runRuntimeCommand(message) {
@@ -362,38 +353,77 @@ function handleRuntimeMessage(message, _sender, sendResponse) {
   return true;
 }
 
+async function deactivateProxy(errorMessage) {
+  await ProxyStorage.setLocal({
+    active: false,
+    ...(errorMessage ? { lastError: sanitizeErrorMessage(errorMessage) } : { lastProxyError: "" }),
+  });
+  setActionIcon(false);
+  try {
+    await proxySettingsClear();
+  } catch (_error) {
+    // Ignore cleanup errors while deactivating.
+  }
+}
+
 async function restoreProxyForCurrentSession() {
   await migrateLegacyStorage();
-
-  const sessionConnected = await ProxyStorage.isSessionConnected();
-  if (!sessionConnected) {
-    await proxySettingsClear();
-    await ProxyStorage.setLocal({ active: false, lastProxyError: "" });
-    setActionIcon(false);
-    return;
-  }
 
   const state = await ProxyStorage.getFullState();
   // Restore the proxy that was actually connected, not the profile currently
   // selected in the form (activeProxy falls back for pre-2.3.0 data).
   const connectedProfile = state.activeProxy || state.proxyProfile;
+
   if (!state.active || !connectedProfile) {
     setActionIcon(false);
     return;
   }
 
+  const sessionConnected = await ProxyStorage.isSessionConnected();
+  const password = sessionConnected
+    ? await ProxyStorage.resolveSessionPassword()
+    : await ProxyStorage.resolveSavedPassword();
+
+  if (connectedProfile.username && !password) {
+    await deactivateProxy("Saved password is missing. Turn the proxy on again.");
+    return;
+  }
+
   try {
-    const config = buildProxyConfig(connectedProfile);
-    await proxySettingsSet(config);
+    await proxySettingsSet(buildProxyConfig(connectedProfile));
+    if (!sessionConnected) {
+      // Auto-reconnect: the toggle was left on, so restore the session after
+      // a browser restart using the locally saved password.
+      await ProxyStorage.restoreSession(password);
+    }
     setActionIcon(true);
   } catch (error) {
-    await ProxyStorage.setLocal({ active: false, lastError: sanitizeErrorMessage(error.message) });
-    setActionIcon(false);
-    try {
-      await proxySettingsClear();
-    } catch (_clearError) {
-      // Ignore cleanup errors after a failed restore.
-    }
+    await deactivateProxy(error && error.message ? error.message : "Failed to restore the proxy.");
+  }
+}
+
+async function toggleProxyFromShortcut() {
+  const state = await ProxyStorage.getFullState();
+  const sessionConnected = await ProxyStorage.isSessionConnected();
+
+  if (state.active && sessionConnected) {
+    await disconnectProxy();
+    return;
+  }
+
+  if (!state.proxyProfile) {
+    return;
+  }
+
+  try {
+    const password = await ProxyStorage.resolveSavedPassword();
+    await connectProxy({
+      profile: state.proxyProfile,
+      password,
+      profileId: state.selectedProfileId || "",
+    });
+  } catch (error) {
+    await deactivateProxy(error && error.message ? error.message : "Failed to connect the proxy.");
   }
 }
 
@@ -410,6 +440,13 @@ chrome.runtime.onStartup.addListener(async () => {
 chrome.proxy.onProxyError.addListener((details) => {
   const message = details && details.error ? details.error : "Proxy connection error";
   markProxyWarning(describeProxyError(message));
+});
+
+chrome.commands.onCommand.addListener((command) => {
+  if (command !== "toggle-proxy") {
+    return undefined;
+  }
+  return toggleProxyFromShortcut();
 });
 
 chrome.runtime.onMessage.addListener(handleRuntimeMessage);

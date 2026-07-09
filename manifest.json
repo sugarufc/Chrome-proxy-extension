@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Proxy Switcher",
-  "version": "2.4.0",
+  "version": "3.0.0",
   "description": "Chrome proxy switcher for user-provided HTTP, HTTPS, and SOCKS5 proxies.",
   "action": {
     "default_popup": "popup.html",
@@ -14,6 +14,14 @@
   },
   "background": {
     "service_worker": "background.js"
+  },
+  "commands": {
+    "toggle-proxy": {
+      "suggested_key": {
+        "default": "Alt+Shift+P"
+      },
+      "description": "Turn the proxy on or off"
+    }
   },
   "permissions": ["proxy", "storage", "webRequest", "webRequestAuthProvider"],
   "host_permissions": ["<all_urls>"],

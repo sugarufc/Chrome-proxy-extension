@@ -14,12 +14,12 @@ Proxy Switcher is a single-purpose Chrome extension for applying a user-provided
 
 What it does:
 
-- lets you enter proxy type, host, port, username, and password
-- connects Chrome to the proxy server you provide
-- disconnects Chrome from that proxy when you choose
-- stores proxy settings locally on your device
-- keeps the password in the current browser session by default
-- optionally stores the password locally in your Chrome profile if you enable Remember password
+- lets you paste your proxy as a single string (`scheme://user:pass@host:port`, `host:port`, or `host:port:user:pass`)
+- turns the proxy on and off with one toggle or a keyboard shortcut
+- verifies the connection automatically after turning the proxy on and shows the response time
+- reconnects the proxy automatically after a browser restart if it was on
+- saves named proxy profiles
+- stores proxy settings and the password locally on your device; Forget saved data removes everything
 
 What it does not do:
 
@@ -89,7 +89,7 @@ Use these answers in the Chrome Web Store developer dashboard.
 - proxy host
 - proxy port
 - proxy username
-- proxy password only if the user enables **Remember password on this device**
+- proxy password (stored locally so the proxy can reconnect after a browser restart)
 
 The developer does not receive, transmit, sell, or store this data on external servers.
 

@@ -11,9 +11,9 @@ function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-function loadBackground(local = {}, session = {}) {
+function loadBackground(local = {}, session = {}, options = {}) {
   const chrome = createChromeMock({ local, session });
-  const context = createRuntimeContext({ chrome, includeStorage: false, includeBackground: true });
+  const context = createRuntimeContext({ chrome, includeStorage: false, includeBackground: true, ...options });
   return { chrome, context };
 }
 
@@ -140,6 +140,69 @@ test("proxy auth answers for the connected proxy snapshot, not the selected form
     challenger: { host: "other.example.com", port: 9090 },
   });
   assert.deepEqual(plain(rejected), {});
+});
+
+test("background auto-reconnects the saved proxy on browser startup", async () => {
+  const { chrome } = loadBackground(
+    {
+      active: true,
+      savedPassword: "secret",
+      activeProxy: { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" },
+      proxyProfile: { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" },
+    },
+    {},
+  );
+
+  const [{ listener }] = chrome.runtime.onStartup.listeners;
+  await listener();
+
+  assert.equal(chrome.proxy.settings.setCalls.length, 1);
+  assert.equal(chrome.storage.session.data.sessionConnected, true);
+  assert.equal(chrome.storage.session.data.sessionPassword, "secret");
+  assert.equal(chrome.storage.local.data.active, true);
+});
+
+test("background startup deactivates an auth proxy when no password is saved", async () => {
+  const { chrome } = loadBackground(
+    {
+      active: true,
+      activeProxy: { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" },
+    },
+    {},
+  );
+
+  const [{ listener }] = chrome.runtime.onStartup.listeners;
+  await listener();
+
+  assert.equal(chrome.storage.local.data.active, false);
+  assert.equal(chrome.storage.session.data.sessionConnected, undefined);
+  assert.match(chrome.storage.local.data.lastError, /password/i);
+});
+
+test("keyboard shortcut toggles the proxy using the saved settings", async () => {
+  const { chrome } = loadBackground(
+    {
+      disclaimerAccepted: true,
+      proxyProfile: { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" },
+      savedPassword: "secret",
+    },
+    {},
+    { fetch: async () => ({ status: 204 }) },
+  );
+
+  const [{ listener }] = chrome.commands.onCommand.listeners;
+
+  await listener("toggle-proxy");
+  assert.equal(chrome.proxy.settings.setCalls.length, 1);
+  assert.equal(chrome.storage.local.data.active, true);
+  assert.equal(chrome.storage.session.data.sessionConnected, true);
+
+  await listener("toggle-proxy");
+  assert.equal(chrome.proxy.settings.clearCalls.length, 1);
+  assert.equal(chrome.storage.local.data.active, false);
+
+  await listener("unrelated-command");
+  assert.equal(chrome.proxy.settings.setCalls.length, 1);
 });
 
 test("proxy auth attempts are bounded without completed/error webRequest listeners", async () => {

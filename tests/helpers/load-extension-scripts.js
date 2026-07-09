@@ -85,6 +85,9 @@ function createChromeMock({ local = {}, session = {} } = {}) {
         this.iconCalls.push(value);
       },
     },
+    commands: {
+      onCommand: createEventMock(),
+    },
     runtime: {
       lastError: null,
       onInstalled: createEventMock(),

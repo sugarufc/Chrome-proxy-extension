@@ -11,7 +11,6 @@
   const LOCAL_KEYS = [
     "disclaimerAccepted",
     "active",
-    "rememberPassword",
     "proxyProfile",
     ACTIVE_PROXY_KEY,
     PROFILES_KEY,
@@ -28,6 +27,7 @@
     "encryptionKey",
     "bypassList",
     "directConnectList",
+    "rememberPassword",
     "encryptedPassword",
     "encryptionSalt",
     "pinVerifier",
@@ -231,10 +231,9 @@
     ]);
   }
 
-  async function saveConnection({ profile, password, rememberPassword, parsedProxy, profileId }) {
+  async function saveConnection({ profile, password, parsedProxy, profileId }) {
     const localPayload = {
       active: true,
-      rememberPassword: Boolean(rememberPassword),
       proxyProfile: profile,
       // Snapshot of the connected proxy. Auth challenges and session restore must keep
       // using this even if the user switches or edits profiles without reconnecting.
@@ -249,7 +248,9 @@
       localPayload[SELECTED_PROFILE_ID_KEY] = profileId;
     }
 
-    if (rememberPassword && password) {
+    // The password is stored locally so the proxy can reconnect automatically
+    // after a browser restart. Forget saved data removes it.
+    if (password) {
       localPayload[LOCAL_PASSWORD_KEY] = password;
     } else {
       await removeLocal([LOCAL_PASSWORD_KEY]);
@@ -258,6 +259,10 @@
     await removeLocal(LEGACY_SECRET_KEYS);
     await setLocal(localPayload);
 
+    await restoreSession(password || "");
+  }
+
+  async function restoreSession(password) {
     await setSession({
       [SESSION_PASSWORD_KEY]: password || "",
       [SESSION_CONNECTED_KEY]: true,
@@ -270,11 +275,8 @@
   }
 
   async function resolveSavedPassword() {
-    const state = await getLocal(["rememberPassword", LOCAL_PASSWORD_KEY]);
-    if (!state.rememberPassword || !state[LOCAL_PASSWORD_KEY]) {
-      return "";
-    }
-    return state[LOCAL_PASSWORD_KEY];
+    const state = await getLocal([LOCAL_PASSWORD_KEY]);
+    return state[LOCAL_PASSWORD_KEY] || "";
   }
 
   async function isSessionConnected() {
@@ -305,7 +307,6 @@
   }
 
   async function setDisconnected() {
-    const { rememberPassword } = await getLocal(["rememberPassword"]);
     await clearSession();
     await setLocal({
       active: false,
@@ -313,7 +314,9 @@
       lastProxyError: "",
     });
 
-    await removeLocal(rememberPassword ? [ACTIVE_PROXY_KEY] : [ACTIVE_PROXY_KEY, LOCAL_PASSWORD_KEY]);
+    // The saved password stays so toggling back on (or the keyboard shortcut)
+    // works without retyping. Forget saved data removes it.
+    await removeLocal([ACTIVE_PROXY_KEY]);
   }
 
   async function forgetAllData() {
@@ -361,6 +364,7 @@
     migrateProxyProfileToProfiles,
     configureTrustedStorageAccess,
     saveConnection,
+    restoreSession,
     resolveSessionPassword,
     resolveSavedPassword,
     isSessionConnected,

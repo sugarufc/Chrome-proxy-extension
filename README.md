@@ -13,17 +13,16 @@ The extension applies proxy settings locally inside Chrome. It does not provide 
 
 ## What the extension does
 
-- Accepts proxy type, host, port, username, and password entered by the user
+- Accepts a proxy pasted as a single string: `scheme://user:pass@host:port`, `host:port`, or `host:port:user:pass`
+- Turns the proxy on and off with a single toggle (or the `Alt+Shift+P` keyboard shortcut)
+- Verifies the connection automatically after turning the proxy on and shows the response time
+- Reconnects the proxy automatically after a browser restart if it was on
 - Saves multiple named proxy profiles
 - Applies the proxy configuration to Chrome through the Chrome Proxy API
 - Always connects to local addresses (`localhost`, `127.0.0.1`, `<local>`) directly, without the proxy
-- Provides an optional manual connection test using `https://www.gstatic.com/generate_204`
-- Shows which proxy is currently connected and explains common Chrome proxy errors
-- Disconnects Chrome from that proxy when the user chooses
+- Explains common Chrome proxy errors in plain language
 - Responds to proxy authentication challenges only for the configured proxy
-- Stores proxy settings locally on the user's device
-- Keeps the proxy password in the current browser session by default
-- Optionally stores the password locally in the Chrome profile if the user enables **Remember password on this device**
+- Stores proxy settings and the password locally on the user's device; **Forget saved data** removes everything
 
 ## What the extension does not do
 
@@ -56,8 +55,7 @@ These permissions are not used to collect browsing history or transmit user data
 - No third-party sharing
 - No remote code
 - Proxy credentials stay on the device only
-- Password is session-only by default
-- If the user enables **Remember password on this device**, the password is stored locally in the Chrome profile
+- The password is stored locally in the Chrome profile so the proxy can reconnect after a browser restart
 - The user can delete all saved data with **Forget saved data**
 
 See [PRIVACY.md](PRIVACY.md).
@@ -75,13 +73,12 @@ The user confirms that they:
 ## Security model
 
 - Full proxy URLs with credentials are never stored
-- Default password storage: `chrome.storage.session`
-- Optional remembered password: `chrome.storage.local` in the Chrome profile when the user opts in
+- The password is stored in `chrome.storage.local` in the Chrome profile (and mirrored to `chrome.storage.session` while connected)
 - Storage access limited to trusted extension contexts when supported by Chrome
-- Sensitive values are not logged
+- Sensitive values are not logged; the popup shows the saved password only as `******`
 - Stored error messages are sanitized before display
-- After browser restart, the proxy is not reconnected automatically
-- The user must click **Connect** again
+- If the proxy was on when the browser closed, it reconnects automatically on the next start
+- Not intended for shared or untrusted devices — the disclaimer states this before first use
 
 ## SOCKS5 with username and password
 
@@ -122,12 +119,13 @@ This creates `dist/proxy-switcher.zip` with only runtime files.
 
 1. Load the extension unpacked or from the ZIP
 2. Accept the disclaimer
-3. Enter proxy settings manually
-4. Optionally click **Save as profile** to store the current proxy as a named profile
-5. Click **Connect**
-6. Optionally click **Test connection**
-7. Click **Disconnect** and confirm behavior
-8. Use [TEST_CHECKLIST.md](TEST_CHECKLIST.md) for full manual verification
+3. Paste a proxy string (for example `http://user:pass@host:port` or `host:port:user:pass`)
+4. Flip the toggle on — the connection test runs automatically and shows the response time
+5. Click the status line to re-test at any time
+6. Optionally click **Save as profile** to store the current proxy as a named profile
+7. Try the `Alt+Shift+P` shortcut to toggle the proxy without opening the popup
+8. Flip the toggle off and confirm behavior
+9. Use [TEST_CHECKLIST.md](TEST_CHECKLIST.md) for full manual verification
 
 ## Files
 

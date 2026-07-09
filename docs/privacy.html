@@ -57,14 +57,22 @@
     <li>Proxy host</li>
     <li>Proxy port</li>
     <li>Proxy username</li>
-    <li>Proxy password, only if the user enables “Remember password on this device”</li>
-    <li>User preferences, such as disclaimer confirmation and remember password setting</li>
+    <li>Proxy password, stored locally in the Chrome profile</li>
+    <li>User preferences, such as disclaimer confirmation</li>
   </ul>
 
   <p>
-    If “Remember password on this device” is disabled, the proxy password is
-    stored only for the current browser session. If enabled, the proxy password
-    is stored locally in the Chrome profile on the user's device.
+    The proxy password is stored locally in the Chrome profile on the user's
+    device so the proxy can reconnect automatically after a browser restart.
+    It never leaves the device. “Forget saved data” removes it at any time.
+  </p>
+
+  <h2>Connection test</h2>
+  <p>
+    The extension verifies connectivity by requesting
+    https://www.gstatic.com/generate_204 when the user turns the proxy on and
+    when the user clicks the status line. The request contains no user data,
+    and no checks run while the proxy is off.
   </p>
 
   <h2>Data sharing</h2>
