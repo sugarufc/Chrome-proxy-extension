@@ -152,10 +152,6 @@
       proxyInput.value = formatProxyString(profile, { password: mask });
     }
 
-    function profileOptionLabel(profile) {
-      return `${profile.name} — ${formatProxyString(profile)}`;
-    }
-
     function selectedProfile() {
       return profiles.find((profile) => profile.id === profileSelect.value) || null;
     }
@@ -173,7 +169,7 @@
       for (const profile of profiles) {
         const option = document.createElement("option");
         option.value = profile.id;
-        option.textContent = profileOptionLabel(profile);
+        option.textContent = profile.name;
         profileSelect.appendChild(option);
       }
 

@@ -125,16 +125,38 @@
       return;
     }
 
+    const fields = profileFields(state.proxyProfile);
     const defaultProfile = {
       id: "default",
-      name: "Default",
-      ...profileFields(state.proxyProfile),
+      name: fields.host,
+      ...fields,
     };
 
     await setLocal({
       [PROFILES_KEY]: [defaultProfile],
       [SELECTED_PROFILE_ID_KEY]: state[SELECTED_PROFILE_ID_KEY] || defaultProfile.id,
     });
+  }
+
+  async function renameLegacyDefaultProfile() {
+    const profiles = await getProfiles();
+    const index = profiles.findIndex((profile) => profile.id === "default" && profile.name === "Default");
+    if (index < 0) {
+      return;
+    }
+
+    // saveProfile matches profiles by name, so the rename must not collide with
+    // an existing profile the user already named after this host.
+    const hostName = String(profiles[index].host || "").trim();
+    const taken = profiles.some(
+      (profile, profileIndex) => profileIndex !== index && profile.name.toLowerCase() === hostName.toLowerCase(),
+    );
+    if (!hostName || taken) {
+      return;
+    }
+
+    profiles[index] = { ...profiles[index], name: hostName };
+    await setLocal({ [PROFILES_KEY]: profiles });
   }
 
   async function saveProfile({ name, profile }) {
@@ -344,6 +366,7 @@
     }
 
     await migrateProxyProfileToProfiles();
+    await renameLegacyDefaultProfile();
     await removeLocal(LEGACY_SECRET_KEYS);
   }
 
