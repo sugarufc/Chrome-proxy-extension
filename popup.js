@@ -94,13 +94,13 @@
         setErrorMessage("");
 
         if (testResult && testResult.ok) {
-          setStatusLine("on", `Connected · ${label} · ${Math.round(testResult.latencyMs)} ms`);
+          setStatusLine("on", `Working · ${Math.round(testResult.latencyMs)} ms`);
         } else if (testResult && !testResult.ok) {
-          setStatusLine("warn", `Connected · ${label} — test failed: ${sanitizeErrorMessage(testResult.message)}`);
+          setStatusLine("warn", sanitizeErrorMessage(testResult.message));
         } else if (state.lastProxyError) {
-          setStatusLine("warn", `Connected · ${label} — ${sanitizeErrorMessage(state.lastProxyError)}`);
+          setStatusLine("warn", sanitizeErrorMessage(state.lastProxyError));
         } else {
-          setStatusLine("on", `Connected · ${label}`);
+          setStatusLine("on", label ? `Connected · ${label}` : "Connected");
         }
         return;
       }
@@ -256,7 +256,7 @@
       }
 
       setBusy(true);
-      setStatusLine("testing", "Testing…");
+      setStatusLine("testing", "Checking…");
       try {
         const response = await sendCommand("testConnection");
         renderStatus(response);

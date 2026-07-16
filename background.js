@@ -210,13 +210,16 @@ async function runConnectionTest() {
     });
 
     if (response.status !== 204) {
-      throw new Error(`Connection test failed with HTTP ${response.status}.`);
+      return { ok: false, message: `Unexpected response from the network (HTTP ${response.status}).` };
     }
 
     return { ok: true, status: response.status, latencyMs: Date.now() - startedAt };
   } catch (error) {
-    const message = error && error.name === "AbortError" ? "Connection test timed out." : error && error.message;
-    return { ok: false, message: sanitizeErrorMessage(message || "Connection test failed.") };
+    const raw = error && error.message ? error.message : "";
+    if ((error && error.name === "AbortError") || /failed to fetch/i.test(raw)) {
+      return { ok: false, message: "The proxy is not responding." };
+    }
+    return { ok: false, message: sanitizeErrorMessage(raw || "Connection check failed.") };
   } finally {
     clearTimeout(timeoutId);
   }
@@ -242,7 +245,7 @@ async function connectProxy(message) {
 
   const testResult = await runConnectionTest();
   if (!testResult.ok) {
-    await markProxyWarning(`Connection test failed: ${testResult.message}`);
+    await markProxyWarning(testResult.message);
   }
 
   return {

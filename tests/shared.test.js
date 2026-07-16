@@ -203,13 +203,20 @@ test("sanitizeErrorMessage keeps user-facing validation messages readable", () =
   );
 });
 
-test("describeProxyError adds hints for known Chrome proxy errors and passes others through", () => {
+test("describeProxyError replaces known Chrome proxy errors with plain language", () => {
   const { describeProxyError } = shared();
 
-  assert.match(describeProxyError("net::ERR_PROXY_CONNECTION_FAILED"), /could not connect to the proxy server/);
-  assert.match(describeProxyError("net::ERR_TUNNEL_CONNECTION_FAILED"), /could not connect to the proxy server/);
-  assert.match(describeProxyError("net::ERR_NAME_NOT_RESOLVED"), /hostname could not be resolved/);
-  assert.match(describeProxyError("net::ERR_TIMED_OUT"), /did not respond in time/);
+  assert.equal(
+    describeProxyError("net::ERR_PROXY_CONNECTION_FAILED"),
+    "Can't reach the proxy server. Check the address and port.",
+  );
+  assert.equal(
+    describeProxyError("net::ERR_TUNNEL_CONNECTION_FAILED"),
+    "Can't reach the proxy server. Check the address and port.",
+  );
+  assert.equal(describeProxyError("net::ERR_NAME_NOT_RESOLVED"), "Proxy address not found. Check the host for typos.");
+  assert.equal(describeProxyError("net::ERR_TIMED_OUT"), "The proxy is not responding.");
+  assert.doesNotMatch(describeProxyError("net::ERR_PROXY_CONNECTION_FAILED"), /net::/);
   assert.equal(describeProxyError("net::ERR_UNRECOGNIZED"), "net::ERR_UNRECOGNIZED");
   assert.equal(describeProxyError(""), "Proxy connection error");
 });
