@@ -1,8 +1,14 @@
-# Release Notes — 3.0.0
+# Release Notes — 3.0.1
 
-**Release date:** July 9, 2026
+**Release date:** July 16, 2026
 
 **Package:** `dist/proxy-switcher.zip`
+
+## Summary (3.0.1)
+
+Status and error messages rewritten in plain language: no raw `net::ERR_*` codes, no redundant "Connection test failed: Connection test timed out" phrasing. A working proxy shows `Working · N ms`; a dead one shows a short human explanation such as "The proxy is not responding."
+
+## Previous release — 3.0.0
 
 ## Summary
 

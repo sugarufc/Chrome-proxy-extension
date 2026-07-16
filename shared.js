@@ -196,23 +196,21 @@
   }
 
   const PROXY_ERROR_HINTS = [
-    [
-      /ERR_(?:PROXY_CONNECTION|TUNNEL_CONNECTION)_FAILED/i,
-      "Chrome could not connect to the proxy server. Check the host and port, confirm the proxy is online, and make sure the proxy type matches your provider.",
-    ],
-    [/ERR_NAME_NOT_RESOLVED/i, "The proxy hostname could not be resolved. Check the host for typos."],
-    [/ERR_SOCKS_CONNECTION_FAILED/i, "The SOCKS proxy refused the connection. Check the host, port, and proxy type."],
-    [/ERR_PROXY_AUTH_UNSUPPORTED/i, "The proxy requested an authentication method Chrome does not support."],
-    [/ERR_(?:CONNECTION_)?TIMED_OUT/i, "The proxy did not respond in time. It may be offline or unreachable."],
+    [/ERR_(?:PROXY_CONNECTION|TUNNEL_CONNECTION)_FAILED/i, "Can't reach the proxy server. Check the address and port."],
+    [/ERR_NAME_NOT_RESOLVED/i, "Proxy address not found. Check the host for typos."],
+    [/ERR_SOCKS_CONNECTION_FAILED/i, "The SOCKS proxy refused the connection."],
+    [/ERR_PROXY_AUTH_UNSUPPORTED/i, "The proxy uses a sign-in method Chrome does not support."],
+    [/ERR_(?:CONNECTION_)?TIMED_OUT/i, "The proxy is not responding."],
     [/ERR_INTERNET_DISCONNECTED/i, "No internet connection."],
   ];
 
+  // Replaces raw Chrome net:: error codes with a short plain-language message.
   function describeProxyError(message) {
     const text = String(message || "").trim() || "Proxy connection error";
 
     for (const [pattern, hint] of PROXY_ERROR_HINTS) {
       if (pattern.test(text)) {
-        return `${text} — ${hint}`;
+        return hint;
       }
     }
 

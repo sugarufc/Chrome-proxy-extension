@@ -118,3 +118,24 @@ test("background testConnection fetches generate_204 only after explicit command
   assert.equal(fetchCalls.length, 1);
   assert.equal(fetchCalls[0].url, "https://www.gstatic.com/generate_204");
 });
+
+test("background reports connection check failures in plain language", async () => {
+  const unreachable = loadBackgroundWithOptions({
+    fetch: async () => {
+      throw new TypeError("Failed to fetch");
+    },
+  });
+  const unreachableResponse = await sendBackgroundMessage(unreachable, { command: "testConnection" });
+
+  assert.equal(unreachableResponse.ok, true);
+  assert.equal(unreachableResponse.testResult.ok, false);
+  assert.equal(unreachableResponse.testResult.message, "The proxy is not responding.");
+
+  const intercepted = loadBackgroundWithOptions({
+    fetch: async () => ({ status: 200 }),
+  });
+  const interceptedResponse = await sendBackgroundMessage(intercepted, { command: "testConnection" });
+
+  assert.equal(interceptedResponse.testResult.ok, false);
+  assert.equal(interceptedResponse.testResult.message, "Unexpected response from the network (HTTP 200).");
+});

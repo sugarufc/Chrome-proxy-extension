@@ -62,7 +62,8 @@ Use this checklist before submitting to the Chrome Web Store.
 ## UI checks
 
 - [ ] The toggle reflects the real connection state
-- [ ] Status line shows `Connected · scheme://host:port · N ms` after a successful test
+- [ ] Status line shows `Working · N ms` after a successful check
+- [ ] Failed checks show a short plain-language message without `net::` codes
 - [ ] Profile dropdown appears only when at least one profile is saved
 - [ ] Save as profile stores name, scheme, host, port, and username only
 - [ ] Delete profile removes the selected profile
