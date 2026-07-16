@@ -145,7 +145,17 @@
       return;
     }
 
-    profiles[index] = { ...profiles[index], name: profiles[index].host };
+    // saveProfile matches profiles by name, so the rename must not collide with
+    // an existing profile the user already named after this host.
+    const hostName = String(profiles[index].host || "").trim();
+    const taken = profiles.some(
+      (profile, profileIndex) => profileIndex !== index && profile.name.toLowerCase() === hostName.toLowerCase(),
+    );
+    if (!hostName || taken) {
+      return;
+    }
+
+    profiles[index] = { ...profiles[index], name: hostName };
     await setLocal({ [PROFILES_KEY]: profiles });
   }
 

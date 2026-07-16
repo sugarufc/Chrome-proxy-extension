@@ -230,6 +230,40 @@ test("cleanupLegacySecrets renames a migrated Default profile to its host", asyn
   assert.equal(chrome.storage.local.data.proxyProfiles[1].name, "Work");
 });
 
+test("cleanupLegacySecrets keeps the Default name when the host name is already taken", async () => {
+  const { chrome, storage } = createStorage({
+    proxyProfiles: [
+      {
+        id: "default",
+        name: "Default",
+        scheme: "http",
+        host: "proxy.example.com",
+        port: 8080,
+        username: "user",
+      },
+      {
+        id: "profile-existing",
+        name: "PROXY.example.com",
+        scheme: "https",
+        host: "proxy.example.com",
+        port: 8443,
+        username: "user",
+      },
+    ],
+    proxyProfile: {
+      scheme: "http",
+      host: "proxy.example.com",
+      port: 8080,
+      username: "user",
+    },
+  });
+
+  await storage.cleanupLegacySecrets();
+
+  assert.equal(chrome.storage.local.data.proxyProfiles[0].name, "Default");
+  assert.equal(chrome.storage.local.data.proxyProfiles[1].name, "PROXY.example.com");
+});
+
 test("saveProfile and deleteProfile manage named proxy profiles", async () => {
   const { chrome, storage } = createStorage();
   const profile = {
