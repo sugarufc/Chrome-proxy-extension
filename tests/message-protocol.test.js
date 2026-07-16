@@ -41,6 +41,13 @@ test("popup delegates proxy, action, and storage mutations to background message
   assert.match(source, /chrome\.runtime\.sendMessage/);
 });
 
+test("popup profile options display only the profile name", () => {
+  const source = fs.readFileSync(path.join(rootDir, "popup.js"), "utf8");
+
+  assert.match(source, /option\.textContent = profile\.name;/);
+  assert.doesNotMatch(source, /profileOptionLabel/);
+});
+
 test("background connect message applies proxy settings, runs the test, and stores state", async () => {
   const fetchCalls = [];
   const chrome = loadBackgroundWithOptions({
