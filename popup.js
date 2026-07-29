@@ -1,13 +1,12 @@
 (function initProxyPopup() {
   "use strict";
 
+  const CONFIRMATION_TIMEOUT_MS = 4_000;
   const {
-    PASSWORD_MASK,
     parseProxyInput,
     formatProxyString,
     buildProfileFromFields,
     validatePasswordForProfile,
-    validateChromeProxySupport,
     sanitizeErrorMessage,
   } = ProxyShared;
 
@@ -46,15 +45,50 @@
     const profileRow = document.getElementById("profileRow");
     const profileSelect = document.getElementById("profileSelect");
     const proxyInput = document.getElementById("proxyInput");
-    const socks5AuthNotice = document.getElementById("socks5AuthNotice");
     const errorMessage = document.getElementById("errorMessage");
     const saveProfileButton = document.getElementById("saveProfileButton");
     const deleteProfileButton = document.getElementById("deleteProfileButton");
     const forgetButton = document.getElementById("forgetButton");
+    const versionLabel = document.getElementById("versionLabel");
+
+    versionLabel.textContent = `Version ${chrome.runtime.getManifest().version}`;
 
     let disclaimerAccepted = false;
-    let savedPasswordValue = "";
+    let selectedPasswordValue = "";
     let profiles = [];
+    let confirmationButton = null;
+    let confirmationTimeoutId = null;
+    let statusRequestId = 0;
+
+    function resetConfirmation() {
+      if (confirmationTimeoutId !== null) {
+        clearTimeout(confirmationTimeoutId);
+        confirmationTimeoutId = null;
+      }
+
+      if (confirmationButton === deleteProfileButton) {
+        deleteProfileButton.textContent = "Delete profile";
+        deleteProfileButton.classList.remove("link-danger");
+      } else if (confirmationButton === forgetButton) {
+        forgetButton.textContent = "Forget saved data";
+      }
+
+      confirmationButton = null;
+    }
+
+    function confirmInline(button, confirmationText) {
+      if (confirmationButton === button) {
+        resetConfirmation();
+        return true;
+      }
+
+      resetConfirmation();
+      confirmationButton = button;
+      button.textContent = confirmationText;
+      button.classList.add("link-danger");
+      confirmationTimeoutId = setTimeout(resetConfirmation, CONFIRMATION_TIMEOUT_MS);
+      return false;
+    }
 
     function setBusy(isBusy) {
       proxyToggle.disabled = isBusy || !disclaimerAccepted;
@@ -114,29 +148,13 @@
       setStatusLine("off", "Off");
     }
 
-    function updateSocks5Notice() {
-      let show = false;
-      try {
-        const parsed = parseProxyInput(proxyInput.value);
-        show = parsed.scheme === "socks5" && Boolean(parsed.username || parsed.password);
-      } catch (_error) {
-        show = false;
-      }
-      socks5AuthNotice.hidden = !show;
-    }
-
     function parseForm({ showError }) {
       try {
         const parsed = parseProxyInput(proxyInput.value);
         const profile = buildProfileFromFields(parsed);
-        let password = parsed.password || "";
-
-        if (password === PASSWORD_MASK && savedPasswordValue) {
-          password = savedPasswordValue;
-        }
+        const password = parsed.password || "";
 
         validatePasswordForProfile(profile, password);
-        validateChromeProxySupport(profile, password);
         setErrorMessage("");
         return { profile, password };
       } catch (error) {
@@ -148,8 +166,7 @@
     }
 
     function fillInputFromProfile(profile) {
-      const mask = profile.username && savedPasswordValue ? PASSWORD_MASK : "";
-      proxyInput.value = formatProxyString(profile, { password: mask });
+      proxyInput.value = formatProxyString(profile, { password: selectedPasswordValue });
     }
 
     function selectedProfile() {
@@ -180,15 +197,13 @@
 
     function loadSavedForm(response) {
       const state = response.state || {};
-      savedPasswordValue = response.password || "";
+      selectedPasswordValue = response.selectedPassword || "";
       populateProfileSelect(state);
 
       const profile = selectedProfile() || state.proxyProfile;
       if (profile && profile.host) {
         fillInputFromProfile(profile);
       }
-
-      updateSocks5Notice();
     }
 
     function showDisclaimer() {
@@ -205,6 +220,23 @@
       proxyToggle.disabled = false;
     }
 
+    // The check must not block the toggle, so the user can turn the proxy off
+    // while the test request is still running. Stale results are dropped.
+    async function runConnectionCheck() {
+      const requestId = ++statusRequestId;
+      setStatusLine("testing", "Checking…");
+      try {
+        const response = await sendCommand("testConnection");
+        if (requestId === statusRequestId && proxyToggle.checked) {
+          renderStatus(response);
+        }
+      } catch (error) {
+        if (requestId === statusRequestId && proxyToggle.checked) {
+          setStatusLine("warn", sanitizeErrorMessage(error.message));
+        }
+      }
+    }
+
     async function connect() {
       const parsed = parseForm({ showError: true });
       if (!parsed) {
@@ -213,27 +245,32 @@
         return;
       }
 
+      statusRequestId += 1;
       setBusy(true);
       setStatusLine("testing", "Connecting…");
       try {
-        const response = await sendCommand("connect", {
+        const connectResponse = await sendCommand("connect", {
           profile: parsed.profile,
           password: parsed.password,
           profileId: profileSelect.value || "",
         });
-        savedPasswordValue = parsed.password || "";
+        selectedPasswordValue = parsed.password || "";
         fillInputFromProfile(parsed.profile);
-        renderStatus(response);
+        renderStatus(connectResponse);
       } catch (error) {
         proxyToggle.checked = false;
         setStatusLine("error", "Off");
         setErrorMessage(error.message);
+        return;
       } finally {
         setBusy(false);
       }
+
+      await runConnectionCheck();
     }
 
     async function disconnect() {
+      statusRequestId += 1;
       setBusy(true);
       try {
         const response = await sendCommand("disconnect");
@@ -251,17 +288,7 @@
         return;
       }
 
-      setBusy(true);
-      setStatusLine("testing", "Checking…");
-      try {
-        const response = await sendCommand("testConnection");
-        renderStatus(response);
-      } catch (error) {
-        setStatusLine("error", "Off");
-        setErrorMessage(error.message);
-      } finally {
-        setBusy(false);
-      }
+      await runConnectionCheck();
     }
 
     async function saveCurrentProfile() {
@@ -271,17 +298,15 @@
       }
 
       const current = selectedProfile();
-      const suggestedName = current ? current.name : parsed.profile.host || "Profile";
-      const name = window.prompt("Profile name", suggestedName);
-      if (name === null) {
-        return;
-      }
+      const name = current ? current.name : parsed.profile.host;
 
       setBusy(true);
       try {
         const response = await sendCommand("saveProfile", {
           name,
           profile: parsed.profile,
+          password: parsed.password,
+          profileId: current ? current.id : "",
         });
         loadSavedForm(response);
         renderStatus(response);
@@ -298,8 +323,7 @@
         return;
       }
 
-      const confirmed = window.confirm(`Delete profile "${profile.name}"?`);
-      if (!confirmed) {
+      if (!confirmInline(deleteProfileButton, "Confirm delete?")) {
         return;
       }
 
@@ -318,8 +342,7 @@
     }
 
     async function forgetSavedData() {
-      const confirmed = window.confirm("Remove all saved proxy settings and credentials from this device?");
-      if (!confirmed) {
+      if (!confirmInline(forgetButton, "Confirm forget?")) {
         return;
       }
 
@@ -327,9 +350,8 @@
       try {
         const response = await sendCommand("forgetAll");
         proxyInput.value = "";
-        savedPasswordValue = "";
+        selectedPasswordValue = "";
         populateProfileSelect({});
-        updateSocks5Notice();
         showDisclaimer();
         disclaimerCheckbox.checked = false;
         acceptDisclaimerButton.disabled = true;
@@ -354,13 +376,15 @@
       showMainForm();
     });
 
-    proxyToggle.addEventListener("change", () => {
+    function handleToggleChange() {
       if (proxyToggle.checked) {
         connect();
       } else {
         disconnect();
       }
-    });
+    }
+
+    proxyToggle.addEventListener("change", handleToggleChange);
 
     statusLine.addEventListener("click", retestConnection);
     saveProfileButton.addEventListener("click", saveCurrentProfile);
@@ -369,21 +393,38 @@
 
     proxyInput.addEventListener("input", () => {
       setErrorMessage("");
-      updateSocks5Notice();
     });
+
+    proxyInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || !disclaimerAccepted || proxyToggle.disabled) {
+        return;
+      }
+
+      event.preventDefault();
+      proxyToggle.checked = true;
+      handleToggleChange();
+    });
+
+    document.addEventListener("click", (event) => {
+      if (confirmationButton && event.target !== confirmationButton) {
+        resetConfirmation();
+      }
+    });
+
+    document.addEventListener("input", resetConfirmation);
 
     profileSelect.addEventListener("change", async () => {
       const profile = selectedProfile();
-      if (profile) {
-        fillInputFromProfile(profile);
-      }
       deleteProfileButton.hidden = !profileSelect.value;
-      updateSocks5Notice();
-
       try {
-        await sendCommand("selectProfile", {
+        const response = await sendCommand("selectProfile", {
           profileId: profileSelect.value,
         });
+        if (profile) {
+          loadSavedForm(response);
+        } else {
+          selectedPasswordValue = "";
+        }
       } catch (error) {
         setErrorMessage(error.message);
       }

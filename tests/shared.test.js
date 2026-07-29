@@ -11,7 +11,7 @@ function plain(value) {
   return JSON.parse(JSON.stringify(value));
 }
 
-test("parseProxyUrl accepts supported proxy URLs with and without credentials", () => {
+test("parseProxyUrl accepts HTTP and HTTPS proxy URLs with and without credentials", () => {
   const { parseProxyUrl } = shared();
 
   assert.deepEqual(plain(parseProxyUrl(" http://user:pass@example.com:8080 ")), {
@@ -30,13 +30,14 @@ test("parseProxyUrl accepts supported proxy URLs with and without credentials", 
     port: 8443,
   });
 
-  assert.deepEqual(plain(parseProxyUrl("socks5://127.0.0.1:1080")), {
-    scheme: "socks5",
-    username: "",
-    password: "",
-    host: "127.0.0.1",
-    port: 1080,
-  });
+  assert.throws(() => parseProxyUrl("socks5://127.0.0.1:1080"), /only HTTP and HTTPS/);
+});
+
+test("parseProxyUrl preserves explicitly specified default ports", () => {
+  const { parseProxyUrl } = shared();
+
+  assert.equal(parseProxyUrl("https://user:pass@example.com:443").port, 443);
+  assert.equal(parseProxyUrl("http://user:pass@example.com:80").port, 80);
 });
 
 test("parseProxyUrl decodes URL-encoded password characters and rejects raw reserved characters", () => {
@@ -59,16 +60,10 @@ test("parseProxyUrl validates required fields and port boundaries", () => {
   assert.throws(() => parseProxyUrl("http://u:p@example.com:8080/path"), /must not include path/);
 });
 
-test("parseProxyInput accepts URLs, host:port, user:pass@host:port, and host:port:user:pass", () => {
+test("parseProxyInput accepts HTTP URLs, host:port, user:pass@host:port, and host:port:user:pass", () => {
   const { parseProxyInput } = shared();
 
-  assert.deepEqual(plain(parseProxyInput("socks5://127.0.0.1:1080")), {
-    scheme: "socks5",
-    username: "",
-    password: "",
-    host: "127.0.0.1",
-    port: 1080,
-  });
+  assert.throws(() => parseProxyInput("socks5://127.0.0.1:1080"), /only HTTP and HTTPS/);
 
   assert.deepEqual(plain(parseProxyInput(" proxy.example.com:8080 ")), {
     scheme: "http",
@@ -99,30 +94,27 @@ test("parseProxyInput accepts URLs, host:port, user:pass@host:port, and host:por
   assert.throws(() => parseProxyInput("proxy.example.com"), /port/);
 });
 
-test("formatProxyString renders a profile with an optional password placeholder", () => {
+test("formatProxyString renders the actual password and URL-encodes reserved characters", () => {
   const { formatProxyString, PASSWORD_MASK } = shared();
   const profile = { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" };
 
+  assert.equal(PASSWORD_MASK, undefined);
   assert.equal(formatProxyString(profile), "http://user@proxy.example.com:8080");
   assert.equal(
-    formatProxyString(profile, { password: PASSWORD_MASK }),
-    `http://user:${PASSWORD_MASK}@proxy.example.com:8080`,
-  );
-  assert.equal(
-    formatProxyString({ scheme: "socks5", host: "127.0.0.1", port: 1080, username: "" }),
-    "socks5://127.0.0.1:1080",
+    formatProxyString(profile, { password: "pa@ss:word/ok#x?y" }),
+    "http://user:pa%40ss%3Aword%2Fok%23x%3Fy@proxy.example.com:8080",
   );
   assert.equal(formatProxyString(null), "");
 });
 
-test("parseProxyInput round-trips a masked formatProxyString value", () => {
-  const { parseProxyInput, formatProxyString, PASSWORD_MASK } = shared();
+test("parseProxyInput round-trips a plaintext formatProxyString value", () => {
+  const { parseProxyInput, formatProxyString } = shared();
   const profile = { scheme: "https", host: "proxy.example.com", port: 8443, username: "user" };
 
-  const masked = formatProxyString(profile, { password: PASSWORD_MASK });
-  const parsed = parseProxyInput(masked);
+  const formatted = formatProxyString(profile, { password: "pa@ss:word/ok#x?y" });
+  const parsed = parseProxyInput(formatted);
 
-  assert.equal(parsed.password, PASSWORD_MASK);
+  assert.equal(parsed.password, "pa@ss:word/ok#x?y");
   assert.equal(parsed.username, "user");
   assert.equal(parsed.host, "proxy.example.com");
 });
@@ -147,7 +139,11 @@ test("buildProfileFromFields normalizes valid fields and rejects invalid profile
     },
   );
 
-  assert.throws(() => buildProfileFromFields({ scheme: "ftp", host: "example.com", port: 21 }), /supported proxy type/);
+  assert.throws(() => buildProfileFromFields({ scheme: "ftp", host: "example.com", port: 21 }), /only HTTP and HTTPS/);
+  assert.throws(
+    () => buildProfileFromFields({ scheme: "socks5", host: "127.0.0.1", port: 1080 }),
+    /only HTTP and HTTPS/,
+  );
   assert.throws(() => buildProfileFromFields({ scheme: "http", host: "", port: 8080 }), /host is required/);
   assert.throws(() => buildProfileFromFields({ scheme: "http", host: "example.com", port: 0 }), /port/);
 });
@@ -159,21 +155,6 @@ test("validatePasswordForProfile enforces password only when username is present
   assert.doesNotThrow(() => validatePasswordForProfile({ scheme: "http", username: "user" }, "pass"));
   assert.throws(() => validatePasswordForProfile({ scheme: "http", username: "user" }, ""), /Password is required/);
   assert.throws(() => validatePasswordForProfile(null, "pass"), /incomplete/);
-});
-
-test("validateChromeProxySupport blocks SOCKS5 credentials but allows SOCKS5 without auth", () => {
-  const { validateChromeProxySupport } = shared();
-
-  assert.doesNotThrow(() => validateChromeProxySupport({ scheme: "socks5", username: "" }, ""));
-  assert.throws(
-    () => validateChromeProxySupport({ scheme: "socks5", username: "user" }, ""),
-    /cannot authenticate SOCKS5/,
-  );
-  assert.throws(
-    () => validateChromeProxySupport({ scheme: "socks5", username: "" }, "pass"),
-    /cannot authenticate SOCKS5/,
-  );
-  assert.doesNotThrow(() => validateChromeProxySupport({ scheme: "http", username: "user" }, "pass"));
 });
 
 test("sanitizeErrorMessage redacts URLs, credentials, and auth headers", () => {

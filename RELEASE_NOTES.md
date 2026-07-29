@@ -1,8 +1,86 @@
-# Release Notes — 3.0.1
+# Release Notes — 3.2.0
 
-**Release date:** July 16, 2026
+**Release date:** July 29, 2026
 
 **Package:** `dist/proxy-switcher.zip`
+
+## Summary (3.2.0)
+
+- Made storage migrations one-time and kept `getStatus` read-only.
+- Stored authentication state before applying proxy settings, with full rollback on failure.
+- Verified that Chrome proxy settings remain controlled by this extension after connecting.
+- Moved the connection test out of the blocking connect path.
+- Added automatic profile names with numeric conflict suffixes and inline destructive-action confirmations.
+- Added Enter-to-connect, shortcut error badges, and active-session filtering for proxy warnings.
+- Set the minimum supported Chrome version to 108.
+
+## Previous release — 3.1.6
+
+**Release date:** July 29, 2026
+
+## Summary (3.1.6)
+
+- Fixed saved proxy passwords disappearing after the first connection when the popup profile ID was temporarily unavailable.
+- The background now safely matches the connected proxy to the selected saved profile before storing its password.
+
+## Previous release — 3.1.5
+
+**Release date:** July 28, 2026
+
+## Summary (3.1.5)
+
+- Added a small, centered version label at the bottom of the popup.
+- The displayed version is read directly from the installed extension manifest.
+
+## Previous release — 3.1.4
+
+**Release date:** July 28, 2026
+
+## Summary (3.1.4)
+
+- Added distinct toolbar icons for proxy off and proxy on states.
+
+## Previous release — 3.1.3
+
+**Release date:** July 28, 2026
+
+## Summary (3.1.3)
+
+- Updated all extension and toolbar icon sizes with the refined Proxy Switcher logo.
+
+## Previous release — 3.1.2
+
+**Release date:** July 28, 2026
+
+## Summary (3.1.2)
+
+- Replaced the extension icon and toolbar states with the new Proxy Switcher logo.
+
+## Previous release — 3.1.1
+
+**Release date:** July 28, 2026
+
+## Summary (3.1.1)
+
+- Removed password masking from the proxy field.
+- Each saved profile now stores and restores its own password.
+- Added safe migration from the legacy shared password.
+- Passwords with reserved URL characters are displayed with correct percent-encoding.
+
+## Previous release — 3.1.0
+
+**Release date:** July 21, 2026
+
+## Summary (3.1.0)
+
+- Removed SOCKS5 from the Chrome extension because authenticated SOCKS5 is not supported by Chrome extensions.
+- Existing SOCKS5 profiles are removed during extension migration; HTTP/HTTPS profiles are preserved.
+- Fixed parsing of explicit HTTPS port `443` and HTTP port `80`.
+- Preserved specific Chrome proxy errors when a connection check fails.
+
+## Previous release — 3.0.1
+
+**Release date:** July 16, 2026
 
 ## Summary (3.0.1)
 

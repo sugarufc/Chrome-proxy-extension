@@ -26,6 +26,36 @@ test("manifest version stays in sync with package.json", () => {
   const packageJson = readJson("package.json");
 
   assert.equal(manifest.version, packageJson.version);
+  assert.equal(manifest.version, "3.2.0");
+});
+
+test("manifest version is newer than the last Chrome Web Store package", () => {
+  const manifest = readJson("manifest.json");
+  const versionParts = manifest.version.split(".").map(Number);
+  const lastStoreVersionParts = [3, 1, 6];
+
+  const isNewer = versionParts.some(
+    (part, index) =>
+      part > lastStoreVersionParts[index] &&
+      versionParts
+        .slice(0, index)
+        .every((earlierPart, earlierIndex) => earlierPart === lastStoreVersionParts[earlierIndex]),
+  );
+
+  assert.equal(isNewer, true, `Manifest version ${manifest.version} must be newer than Chrome Web Store version 3.1.6`);
+});
+
+test("manifest requires Chrome 108 or newer", () => {
+  const manifest = readJson("manifest.json");
+
+  assert.equal(manifest.minimum_chrome_version, "108");
+});
+
+test("manifest advertises only HTTP and HTTPS proxies", () => {
+  const manifest = readJson("manifest.json");
+
+  assert.match(manifest.description, /HTTP.*HTTPS/);
+  assert.doesNotMatch(manifest.description, /SOCKS/i);
 });
 
 test("manifest requests only the permissions the extension uses", () => {

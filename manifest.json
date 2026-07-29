@@ -1,8 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Proxy Switcher",
-  "version": "3.0.1",
-  "description": "Chrome proxy switcher for user-provided HTTP, HTTPS, and SOCKS5 proxies.",
+  "version": "3.2.0",
+  "minimum_chrome_version": "108",
+  "description": "Chrome proxy switcher for user-provided HTTP and HTTPS proxies.",
   "action": {
     "default_popup": "popup.html",
     "default_title": "Proxy Switcher",

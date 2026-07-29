@@ -317,6 +317,14 @@ select:focus {
   margin-left: auto;
 }
 
+.version-label {
+  margin: 3px 0 0;
+  color: #9a9a9f;
+  font-size: 10px;
+  line-height: 1.2;
+  text-align: center;
+}
+
 .button {
   height: 38px;
   border: 1px solid transparent;

@@ -1,6 +1,6 @@
 # Proxy Switcher
 
-Chrome proxy switcher for user-provided HTTP/HTTPS/SOCKS5 proxies.
+Chrome proxy switcher for user-provided HTTP/HTTPS proxies.
 
 **Repository:** https://github.com/sugarufc/Chrome-proxy-extension  
 **Privacy policy:** https://github.com/sugarufc/Chrome-proxy-extension/blob/main/PRIVACY.md
@@ -75,28 +75,11 @@ The user confirms that they:
 - Full proxy URLs with credentials are never stored
 - The password is stored in `chrome.storage.local` in the Chrome profile (and mirrored to `chrome.storage.session` while connected)
 - Storage access limited to trusted extension contexts when supported by Chrome
-- Sensitive values are not logged; the popup shows the saved password only as `******`
+- Sensitive values are not logged; the popup displays the saved password in plain text in the proxy field
+- Do not use the extension on shared or untrusted Chrome profiles where other people can open the popup
 - Stored error messages are sanitized before display
 - If the proxy was on when the browser closed, it reconnects automatically on the next start
 - Not intended for shared or untrusted devices — the disclaimer states this before first use
-
-## SOCKS5 with username and password
-
-Chrome extensions cannot send SOCKS5 credentials. This is a Chrome engine limitation, not a bug in this extension. If you connect a SOCKS5 proxy with a username or password, Chrome may show **Connected** but browsing will fail.
-
-**What to do instead:**
-
-1. Ask your proxy provider for an **HTTP** or **HTTPS** endpoint on the same account.
-2. Or run a local HTTP forwarder and connect the extension to `127.0.0.1`:
-
-```bash
-brew install gost
-gost -L=http://127.0.0.1:18080 -F=socks5://USERNAME:PASSWORD@HOST:PORT
-```
-
-Then in the extension use **HTTP**, host `127.0.0.1`, port `18080`, with no username or password.
-
-SOCKS5 without authentication is supported.
 
 ## Build instructions
 

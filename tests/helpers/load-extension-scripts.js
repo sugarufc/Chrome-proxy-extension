@@ -19,7 +19,7 @@ function createEventMock() {
   };
 }
 
-function createStorageArea(initial = {}) {
+function createStorageArea(initial = {}, areaName = "storage", operationLog = []) {
   const data = { ...initial };
 
   function select(keys) {
@@ -48,20 +48,31 @@ function createStorageArea(initial = {}) {
 
   return {
     data,
+    getCalls: [],
+    setCalls: [],
+    removeCalls: [],
+    clearCalls: 0,
     get(keys, callback) {
+      this.getCalls.push(keys);
       callback(select(keys));
     },
     set(values, callback = () => {}) {
+      this.setCalls.push(values);
+      operationLog.push(`${areaName}.set`);
       Object.assign(data, values);
       callback();
     },
     remove(keys, callback = () => {}) {
+      this.removeCalls.push(keys);
+      operationLog.push(`${areaName}.remove`);
       for (const key of Array.isArray(keys) ? keys : [keys]) {
         delete data[key];
       }
       callback();
     },
     clear(callback = () => {}) {
+      this.clearCalls += 1;
+      operationLog.push(`${areaName}.clear`);
       for (const key of Object.keys(data)) {
         delete data[key];
       }
@@ -73,16 +84,33 @@ function createStorageArea(initial = {}) {
   };
 }
 
-function createChromeMock({ local = {}, session = {} } = {}) {
-  return {
+function createChromeMock({
+  local = {},
+  session = {},
+  proxyLevelOfControl = "controlled_by_this_extension",
+  proxySetError = "",
+  proxyClearError = "",
+  proxyGetError = "",
+} = {}) {
+  const operationLog = [];
+  const chrome = {
+    operationLog,
     action: {
       badgeTextCalls: [],
+      badgeBackgroundColorCalls: [],
       iconCalls: [],
+      titleCalls: [],
       setBadgeText(value) {
         this.badgeTextCalls.push(value);
       },
+      setBadgeBackgroundColor(value) {
+        this.badgeBackgroundColorCalls.push(value);
+      },
       setIcon(value) {
         this.iconCalls.push(value);
+      },
+      setTitle(value) {
+        this.titleCalls.push(value);
       },
     },
     commands: {
@@ -99,19 +127,33 @@ function createChromeMock({ local = {}, session = {} } = {}) {
       settings: {
         setCalls: [],
         clearCalls: [],
+        getCalls: [],
         set(value, callback = () => {}) {
           this.setCalls.push(value);
+          operationLog.push("proxy.settings.set");
+          chrome.runtime.lastError = proxySetError ? { message: proxySetError } : null;
           callback();
+          chrome.runtime.lastError = null;
         },
         clear(value, callback = () => {}) {
           this.clearCalls.push(value);
+          operationLog.push("proxy.settings.clear");
+          chrome.runtime.lastError = proxyClearError ? { message: proxyClearError } : null;
           callback();
+          chrome.runtime.lastError = null;
+        },
+        get(value, callback = () => {}) {
+          this.getCalls.push(value);
+          operationLog.push("proxy.settings.get");
+          chrome.runtime.lastError = proxyGetError ? { message: proxyGetError } : null;
+          callback({ levelOfControl: proxyLevelOfControl });
+          chrome.runtime.lastError = null;
         },
       },
     },
     storage: {
-      local: createStorageArea(local),
-      session: createStorageArea(session),
+      local: createStorageArea(local, "storage.local", operationLog),
+      session: createStorageArea(session, "storage.session", operationLog),
     },
     webRequest: {
       onAuthRequired: createEventMock(),
@@ -119,6 +161,8 @@ function createChromeMock({ local = {}, session = {} } = {}) {
       onErrorOccurred: createEventMock(),
     },
   };
+
+  return chrome;
 }
 
 function createRuntimeContext(options = {}) {

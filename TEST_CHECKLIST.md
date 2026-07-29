@@ -23,8 +23,7 @@ Use this checklist before submitting to the Chrome Web Store.
 - [ ] HTTP proxy without auth connects with the toggle
 - [ ] HTTP proxy with auth connects with the toggle
 - [ ] HTTPS proxy with auth connects with the toggle
-- [ ] SOCKS5 proxy with credentials shows the Chrome limitation notice
-- [ ] SOCKS5 without credentials can connect
+- [ ] SOCKS5 input is rejected before Chrome proxy settings change
 - [ ] The connection test runs automatically after turning the proxy on and shows latency
 - [ ] Clicking the status line re-runs the connection test
 - [ ] Test failure shows a warning but keeps the proxy connected
@@ -43,6 +42,7 @@ Use this checklist before submitting to the Chrome Web Store.
 
 - [ ] Local addresses (`localhost`, `127.0.0.1`, `<local>`) always connect directly, without the proxy
 - [ ] Existing single `proxyProfile` is migrated to a `Default` saved profile
+- [ ] Existing SOCKS5 profiles are removed while HTTP/HTTPS profiles are preserved
 - [ ] Saved profile list survives popup close/reopen
 - [ ] Deleting a saved profile removes it from the list without exposing passwords
 - [ ] Turning the toggle off clears the session but keeps the saved password

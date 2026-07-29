@@ -3,11 +3,7 @@
 
   // Local addresses always connect directly so local servers and forwarders keep working.
   const DEFAULT_BYPASS_LIST = Object.freeze(["localhost", "127.0.0.1", "<local>"]);
-  // Placeholder shown instead of the real password when a saved proxy string is displayed.
-  const PASSWORD_MASK = "******";
-  const SUPPORTED_SCHEMES = new Set(["http", "https", "socks5"]);
-  const SCHEMES_REQUIRING_AUTH = new Set(["http", "https"]);
-  const SCHEMES_WITHOUT_EXTENSION_AUTH = new Set(["socks5"]);
+  const SUPPORTED_SCHEMES = new Set(["http", "https"]);
 
   function assertEncodedCredentials(raw) {
     const authority = raw.replace(/^[a-z0-9]+:\/\//i, "").split(/[/?#]/, 1)[0];
@@ -38,6 +34,14 @@
     }
   }
 
+  function getExplicitPort(raw) {
+    const authority = raw.replace(/^[a-z0-9]+:\/\//i, "").split(/[/?#]/, 1)[0];
+    const hostAndPort = authority.slice(authority.lastIndexOf("@") + 1);
+    const match = hostAndPort.match(/:(\d+)$/);
+
+    return match ? match[1] : "";
+  }
+
   function parseProxyUrl(input) {
     const raw = String(input || "").trim();
 
@@ -47,7 +51,7 @@
 
     const schemeMatch = raw.match(/^([a-z0-9]+):\/\//i);
     if (!schemeMatch || !SUPPORTED_SCHEMES.has(schemeMatch[1].toLowerCase())) {
-      throw new Error("Unsupported proxy scheme. Use http://, https://, or socks5://.");
+      throw new Error("Unsupported proxy scheme. This extension supports only HTTP and HTTPS.");
     }
 
     if (raw.includes("@")) {
@@ -65,17 +69,19 @@
     const username = safeDecode(url.username, "username");
     const password = safeDecode(url.password, "password");
     const host = url.hostname;
-    const port = Number(url.port);
+    // URL normalizes explicit default ports (HTTPS 443 and HTTP 80) to an empty string.
+    const normalizedPort = url.port || getExplicitPort(raw);
+    const port = Number(normalizedPort);
 
     if (!SUPPORTED_SCHEMES.has(scheme)) {
-      throw new Error("Unsupported proxy scheme. Use http://, https://, or socks5://.");
+      throw new Error("Unsupported proxy scheme. This extension supports only HTTP and HTTPS.");
     }
 
     if (!host) {
       throw new Error("Proxy URL must include host.");
     }
 
-    if (!url.port || !Number.isInteger(port) || port < 1 || port > 65535) {
+    if (!normalizedPort || !Number.isInteger(port) || port < 1 || port > 65535) {
       throw new Error("Proxy port must be a number from 1 to 65535.");
     }
 
@@ -126,7 +132,7 @@
     if (profile.username) {
       auth = encodeURIComponent(profile.username);
       if (options.password) {
-        auth += `:${options.password}`;
+        auth += `:${encodeURIComponent(options.password)}`;
       }
       auth += "@";
     }
@@ -143,7 +149,7 @@
     const normalizedUsername = String(username || "").trim();
 
     if (!SUPPORTED_SCHEMES.has(normalizedScheme)) {
-      throw new Error("Select a supported proxy type: HTTP, HTTPS, or SOCKS5.");
+      throw new Error("Unsupported proxy scheme. This extension supports only HTTP and HTTPS.");
     }
 
     if (!normalizedHost) {
@@ -172,18 +178,6 @@
     }
   }
 
-  function validateChromeProxySupport(profile, password) {
-    if (!profile || !SCHEMES_WITHOUT_EXTENSION_AUTH.has(profile.scheme)) {
-      return;
-    }
-
-    if (profile.username || password) {
-      throw new Error(
-        "Chrome cannot authenticate SOCKS5 proxies in extensions. Use HTTP or HTTPS if your provider supports it, or run a local HTTP forwarder to your SOCKS5 proxy and connect to 127.0.0.1 here.",
-      );
-    }
-  }
-
   function sanitizeErrorMessage(message) {
     let text = String(message || "Unexpected error.");
 
@@ -198,7 +192,6 @@
   const PROXY_ERROR_HINTS = [
     [/ERR_(?:PROXY_CONNECTION|TUNNEL_CONNECTION)_FAILED/i, "Can't reach the proxy server. Check the address and port."],
     [/ERR_NAME_NOT_RESOLVED/i, "Proxy address not found. Check the host for typos."],
-    [/ERR_SOCKS_CONNECTION_FAILED/i, "The SOCKS proxy refused the connection."],
     [/ERR_PROXY_AUTH_UNSUPPORTED/i, "The proxy uses a sign-in method Chrome does not support."],
     [/ERR_(?:CONNECTION_)?TIMED_OUT/i, "The proxy is not responding."],
     [/ERR_INTERNET_DISCONNECTED/i, "No internet connection."],
@@ -247,16 +240,12 @@
 
   const shared = {
     DEFAULT_BYPASS_LIST,
-    PASSWORD_MASK,
     SUPPORTED_SCHEMES,
-    SCHEMES_REQUIRING_AUTH,
-    SCHEMES_WITHOUT_EXTENSION_AUTH,
     parseProxyUrl,
     parseProxyInput,
     formatProxyString,
     buildProfileFromFields,
     validatePasswordForProfile,
-    validateChromeProxySupport,
     buildProxyConfig,
     sanitizeParsedProxy,
     sanitizeErrorMessage,

@@ -8,10 +8,10 @@ const AUTH_ATTEMPT_TTL_MS = 5 * 60 * 1000;
 const TEST_CONNECTION_URL = "https://www.gstatic.com/generate_204";
 const TEST_CONNECTION_TIMEOUT_MS = 10_000;
 const authAttemptsByRequest = new Map();
+let latestProxyError = { message: "", timestamp: 0 };
 const {
   buildProfileFromFields,
   validatePasswordForProfile,
-  validateChromeProxySupport,
   buildProxyConfig,
   sanitizeParsedProxy,
   sanitizeErrorMessage,
@@ -27,6 +27,19 @@ function proxySettingsSet(config) {
         return;
       }
       resolve();
+    });
+  });
+}
+
+function proxySettingsGet() {
+  return new Promise((resolve, reject) => {
+    chrome.proxy.settings.get({}, (details) => {
+      const runtimeError = chrome.runtime.lastError;
+      if (runtimeError) {
+        reject(new Error(runtimeError.message));
+        return;
+      }
+      resolve(details || {});
     });
   });
 }
@@ -47,6 +60,7 @@ function proxySettingsClear() {
 function setActionIcon(active) {
   const suffix = active ? "-on" : "";
   chrome.action.setBadgeText({ text: "" });
+  chrome.action.setTitle({ title: "Proxy Switcher" });
   chrome.action.setIcon({
     path: {
       16: `icons/icon16${suffix}.png`,
@@ -165,33 +179,28 @@ function handleAuthRequired(details, asyncCallback) {
     });
 }
 
-async function migrateLegacyStorage() {
-  await ProxyStorage.cleanupLegacySecrets();
-}
-
 async function getStatusPayload(options = {}) {
   const state = await ProxyStorage.getFullState();
   const sessionConnected = await ProxyStorage.isSessionConnected();
-  const sessionPassword = sessionConnected ? await ProxyStorage.resolveSessionPassword() : "";
-  const savedPassword = state.savedPassword || "";
+  const selectedPassword = state.selectedProfileId
+    ? await ProxyStorage.getProfilePassword(state.selectedProfileId)
+    : "";
 
-  // The popup receives the password through the dedicated field below; keep the raw
-  // secret out of the general state object.
+  // The popup receives only the selected profile password through the dedicated
+  // field below; keep all secrets out of the general state object.
   delete state.savedPassword;
+  delete state.profilePasswords;
 
   return {
     state,
     sessionConnected,
-    password: sessionPassword || savedPassword,
+    selectedPassword,
     status: options.status || "",
     message: options.message || "",
   };
 }
 
 async function getCurrentStatus() {
-  await ProxyStorage.configureTrustedStorageAccess();
-  await restoreProxyForCurrentSession();
-
   const state = await ProxyStorage.getFullState();
   const sessionConnected = await ProxyStorage.isSessionConnected();
   setActionIcon(Boolean(state.active && sessionConnected));
@@ -216,6 +225,9 @@ async function runConnectionTest() {
     return { ok: true, status: response.status, latencyMs: Date.now() - startedAt };
   } catch (error) {
     const raw = error && error.message ? error.message : "";
+    if (latestProxyError.timestamp >= startedAt && latestProxyError.message) {
+      return { ok: false, message: latestProxyError.message };
+    }
     if ((error && error.name === "AbortError") || /failed to fetch/i.test(raw)) {
       return { ok: false, message: "The proxy is not responding." };
     }
@@ -230,28 +242,35 @@ async function connectProxy(message) {
   const password = String(message.password || "");
 
   validatePasswordForProfile(profile, password);
-  validateChromeProxySupport(profile, password);
 
   const config = buildProxyConfig(profile);
 
-  await proxySettingsSet(config);
   await ProxyStorage.saveConnection({
     profile,
     password,
     parsedProxy: sanitizeParsedProxy(profile, Boolean(password)),
     profileId: message.profileId || "",
   });
-  setActionIcon(true);
 
-  const testResult = await runConnectionTest();
-  if (!testResult.ok) {
-    await markProxyWarning(testResult.message);
+  try {
+    await proxySettingsSet(config);
+    const control = await proxySettingsGet();
+    if (control.levelOfControl !== "controlled_by_this_extension") {
+      throw new Error("Another extension or a policy is managing Chrome's proxy settings.");
+    }
+  } catch (error) {
+    await ProxyStorage.setDisconnected();
+    try {
+      await proxySettingsClear();
+    } catch (_clearError) {
+      // Preserve the original connection error.
+    }
+    setActionIcon(false);
+    throw error;
   }
 
-  return {
-    ...(await getStatusPayload({ status: "connected" })),
-    testResult,
-  };
+  setActionIcon(true);
+  return getStatusPayload({ status: "connected" });
 }
 
 async function disconnectProxy() {
@@ -279,6 +298,8 @@ async function saveProfile(message) {
   await ProxyStorage.saveProfile({
     name: message.name,
     profile: message.profile,
+    password: String(message.password || ""),
+    profileId: message.profileId || "",
   });
   return getStatusPayload();
 }
@@ -341,6 +362,13 @@ function handleRuntimeMessage(message, _sender, sendResponse) {
       const errorMessage = sanitizeErrorMessage(error && error.message ? error.message : "Proxy command failed.");
 
       if (shouldPersistCommandError(command)) {
+        if (command === "connect") {
+          try {
+            await proxySettingsClear();
+          } catch (_clearError) {
+            // Preserve the original connection error.
+          }
+        }
         await ProxyStorage.setLocal({
           lastError: errorMessage,
           ...(command === "connect" ? { active: false } : {}),
@@ -357,11 +385,17 @@ function handleRuntimeMessage(message, _sender, sendResponse) {
 }
 
 async function deactivateProxy(errorMessage) {
+  const sanitizedError = errorMessage ? sanitizeErrorMessage(errorMessage) : "";
   await ProxyStorage.setLocal({
     active: false,
-    ...(errorMessage ? { lastError: sanitizeErrorMessage(errorMessage) } : { lastProxyError: "" }),
+    ...(sanitizedError ? { lastError: sanitizedError } : { lastProxyError: "" }),
   });
   setActionIcon(false);
+  if (sanitizedError) {
+    chrome.action.setBadgeText({ text: "!" });
+    chrome.action.setBadgeBackgroundColor({ color: "#d93025" });
+    chrome.action.setTitle({ title: sanitizedError });
+  }
   try {
     await proxySettingsClear();
   } catch (_error) {
@@ -370,8 +404,6 @@ async function deactivateProxy(errorMessage) {
 }
 
 async function restoreProxyForCurrentSession() {
-  await migrateLegacyStorage();
-
   const state = await ProxyStorage.getFullState();
   // Restore the proxy that was actually connected, not the profile currently
   // selected in the form (activeProxy falls back for pre-2.3.0 data).
@@ -385,7 +417,7 @@ async function restoreProxyForCurrentSession() {
   const sessionConnected = await ProxyStorage.isSessionConnected();
   const password = sessionConnected
     ? await ProxyStorage.resolveSessionPassword()
-    : await ProxyStorage.resolveSavedPassword();
+    : await ProxyStorage.getProfilePassword(state.activeProfileId);
 
   if (connectedProfile.username && !password) {
     await deactivateProxy("Saved password is missing. Turn the proxy on again.");
@@ -419,7 +451,7 @@ async function toggleProxyFromShortcut() {
   }
 
   try {
-    const password = await ProxyStorage.resolveSavedPassword();
+    const password = await ProxyStorage.getProfilePassword(state.selectedProfileId);
     await connectProxy({
       profile: state.proxyProfile,
       password,
@@ -432,7 +464,10 @@ async function toggleProxyFromShortcut() {
 
 chrome.runtime.onInstalled.addListener(async () => {
   await ProxyStorage.configureTrustedStorageAccess();
-  await ProxyStorage.cleanupLegacySecrets();
+  const { removedActiveProxy } = await ProxyStorage.migrateStorage();
+  if (removedActiveProxy) {
+    await proxySettingsClear();
+  }
   await restoreProxyForCurrentSession();
 });
 
@@ -440,9 +475,14 @@ chrome.runtime.onStartup.addListener(async () => {
   await restoreProxyForCurrentSession();
 });
 
-chrome.proxy.onProxyError.addListener((details) => {
+chrome.proxy.onProxyError.addListener(async (details) => {
   const message = details && details.error ? details.error : "Proxy connection error";
-  markProxyWarning(describeProxyError(message));
+  const describedMessage = describeProxyError(message);
+  latestProxyError = { message: describedMessage, timestamp: Date.now() };
+  const { active } = await ProxyStorage.getAuthState();
+  if (active) {
+    await markProxyWarning(describedMessage);
+  }
 });
 
 chrome.commands.onCommand.addListener((command) => {

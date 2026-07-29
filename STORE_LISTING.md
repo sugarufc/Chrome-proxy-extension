@@ -2,11 +2,11 @@
 
 ## Positioning
 
-Chrome proxy switcher for user-provided HTTP/HTTPS/SOCKS5 proxies.
+Chrome proxy switcher for user-provided HTTP/HTTPS proxies.
 
 ## Short description
 
-Configure Chrome to use your own HTTP, HTTPS, or SOCKS5 proxy.
+Configure Chrome to use your own HTTP or HTTPS proxy.
 
 ## Full description
 
@@ -34,11 +34,10 @@ Supported proxy types:
 
 - HTTP
 - HTTPS
-- SOCKS5
 
 ## Single purpose
 
-Configure Chrome to use a user-provided HTTP, HTTPS, or SOCKS5 proxy.
+Configure Chrome to use a user-provided HTTP or HTTPS proxy.
 
 ## Category
 
@@ -138,4 +137,4 @@ Do not use wording that suggests hidden identity, restriction evasion, or access
 
 ## Approved positioning sentence
 
-Chrome proxy switcher for user-provided HTTP/HTTPS/SOCKS5 proxies.
+Chrome proxy switcher for user-provided HTTP/HTTPS proxies.
