@@ -49,6 +49,10 @@
     const saveProfileButton = document.getElementById("saveProfileButton");
     const deleteProfileButton = document.getElementById("deleteProfileButton");
     const forgetButton = document.getElementById("forgetButton");
+    const renameProfileButton = document.getElementById("renameProfileButton");
+    const renameInput = document.getElementById("renameInput");
+    const blockOnFailureCheckbox = document.getElementById("blockOnFailureCheckbox");
+    const webRtcCheckbox = document.getElementById("webRtcCheckbox");
     const versionLabel = document.getElementById("versionLabel");
 
     versionLabel.textContent = `Version ${chrome.runtime.getManifest().version}`;
@@ -96,6 +100,7 @@
       busy = isBusy;
       proxyToggle.disabled = isBusy || !disclaimerAccepted;
       saveProfileButton.disabled = isBusy;
+      renameProfileButton.disabled = isBusy;
       deleteProfileButton.disabled = isBusy;
       forgetButton.disabled = isBusy;
     }
@@ -130,6 +135,12 @@
         lastCheck = response.testResult;
       }
       const testResult = lastCheck;
+
+      if (connected && response.blocked) {
+        setStatusLine("error", "Blocked");
+        setErrorMessage(state.lastError);
+        return;
+      }
 
       if (connected) {
         const label = proxyLabel(state);
@@ -186,7 +197,7 @@
 
       const emptyOption = document.createElement("option");
       emptyOption.value = "";
-      emptyOption.textContent = "Unsaved proxy";
+      emptyOption.textContent = "New proxy";
       profileSelect.appendChild(emptyOption);
 
       for (const profile of profiles) {
@@ -204,11 +215,15 @@
     // With a profile selected the button overwrites it; "Unsaved proxy" creates a new one.
     function updateProfileControls() {
       deleteProfileButton.hidden = !profileSelect.value;
+      renameProfileButton.hidden = !profileSelect.value;
       saveProfileButton.textContent = profileSelect.value ? "Update profile" : "Save as profile";
+      hideRenameInput();
     }
 
     function loadSavedForm(response) {
       const state = response.state || {};
+      blockOnFailureCheckbox.checked = Boolean(state.blockOnFailure);
+      webRtcCheckbox.checked = Boolean(state.webRtcProtection);
       selectedPasswordValue = response.selectedPassword || "";
       populateProfileSelect(state);
 
@@ -354,6 +369,68 @@
       }
     }
 
+    function hideRenameInput() {
+      renameInput.hidden = true;
+      profileSelect.hidden = false;
+    }
+
+    function showRenameInput() {
+      const profile = selectedProfile();
+      if (!profile) {
+        return;
+      }
+      renameInput.value = profile.name;
+      renameInput.hidden = false;
+      profileSelect.hidden = true;
+      renameInput.focus();
+      renameInput.select();
+    }
+
+    async function commitRename() {
+      const profile = selectedProfile();
+      const name = renameInput.value.trim();
+      hideRenameInput();
+      if (!profile || !name || name === profile.name) {
+        return;
+      }
+
+      setBusy(true);
+      try {
+        const response = await sendCommand("renameProfile", { profileId: profile.id, name });
+        populateProfileSelect(response.state || {});
+      } catch (error) {
+        setErrorMessage(error.message);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function saveSettings(settings) {
+      try {
+        renderStatus(await sendCommand("setSettings", { settings }));
+      } catch (error) {
+        setErrorMessage(error.message);
+      }
+    }
+
+    // The privacy permission is optional; asking needs the click that just happened.
+    async function toggleWebRtcProtection() {
+      if (webRtcCheckbox.checked) {
+        let granted = false;
+        try {
+          granted = await chrome.permissions.request({ permissions: ["privacy"] });
+        } catch (_error) {
+          granted = false;
+        }
+        if (!granted) {
+          webRtcCheckbox.checked = false;
+          setErrorMessage("Chrome needs the privacy permission to block WebRTC leaks.");
+          return;
+        }
+      }
+      await saveSettings({ webRtcProtection: webRtcCheckbox.checked });
+    }
+
     async function forgetSavedData() {
       if (!confirmInline(forgetButton, "Confirm forget?")) {
         return;
@@ -407,6 +484,25 @@
     saveProfileButton.addEventListener("click", saveCurrentProfile);
     deleteProfileButton.addEventListener("click", deleteSelectedProfile);
     forgetButton.addEventListener("click", forgetSavedData);
+    renameProfileButton.addEventListener("click", showRenameInput);
+    renameInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        commitRename();
+      } else if (event.key === "Escape") {
+        hideRenameInput();
+      }
+    });
+    renameInput.addEventListener("blur", () => {
+      // Enter and Escape hide the input first, so only a real click-away commits.
+      if (!renameInput.hidden) {
+        commitRename();
+      }
+    });
+    blockOnFailureCheckbox.addEventListener("change", () =>
+      saveSettings({ blockOnFailure: blockOnFailureCheckbox.checked }),
+    );
+    webRtcCheckbox.addEventListener("change", toggleWebRtcProtection);
 
     proxyInput.addEventListener("input", () => {
       setErrorMessage("");

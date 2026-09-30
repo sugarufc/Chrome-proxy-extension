@@ -61,6 +61,10 @@ Required to handle proxy authentication challenges for the configured proxy.
 
 Required to provide username and password to the configured proxy when Chrome requests proxy authentication.
 
+### privacy (optional)
+
+Requested only when the user enables "Block WebRTC IP leaks". Used solely to set Chrome's WebRTC IP handling policy to `disable_non_proxied_udp` while the proxy is on and to restore it when the proxy is turned off.
+
 ### Host permission: `<all_urls>`
 
 Required because Chrome proxy authentication callbacks can occur for requests routed through the configured proxy across websites loaded in the browser.

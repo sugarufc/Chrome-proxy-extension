@@ -69,21 +69,71 @@ test("connecting to a different proxy never overwrites the selected profile's pa
   await storage.saveConnection({ profile: other, password: "other-secret", parsedProxy: null, profileId: "profile-a" });
 
   assert.equal(chrome.storage.local.data.profilePasswords["profile-a"], "saved-secret");
-  assert.equal(chrome.storage.local.data.activeProfileId, "");
-  assert.equal(chrome.storage.local.data.selectedProfileId, "");
+  const created = chrome.storage.local.data.proxyProfiles.find((item) => item.host === "other.example.com");
+  assert.ok(created);
+  assert.equal(chrome.storage.local.data.activeProfileId, created.id);
+  assert.equal(chrome.storage.local.data.selectedProfileId, created.id);
+  assert.equal(chrome.storage.local.data.profilePasswords[created.id], "other-secret");
   assert.deepEqual(plain(chrome.storage.local.data.proxyProfile), other);
   assert.equal(chrome.storage.session.data.sessionPassword, "other-secret");
 });
 
-test("an unsaved connection keeps its password out of local storage", async () => {
+test("a connection to an unknown proxy is saved as a host-named profile", async () => {
   const { chrome, storage } = createStorage();
   const profile = { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" };
 
-  await storage.saveConnection({ profile, password: "session-only", parsedProxy: null, profileId: "" });
+  await storage.saveConnection({ profile, password: "secret", parsedProxy: null, profileId: "" });
 
+  const [saved] = chrome.storage.local.data.proxyProfiles;
+  assert.equal(saved.name, "proxy.example.com");
+  assert.equal(chrome.storage.local.data.selectedProfileId, saved.id);
+  assert.equal(chrome.storage.local.data.activeProfileId, saved.id);
+  assert.equal(chrome.storage.local.data.profilePasswords[saved.id], "secret");
   assert.equal(chrome.storage.local.data.savedPassword, undefined);
-  assert.equal(chrome.storage.local.data.profilePasswords, undefined);
-  assert.equal(chrome.storage.session.data.sessionPassword, "session-only");
+  assert.equal(chrome.storage.session.data.sessionPassword, "secret");
+});
+
+test("reconnecting a known proxy reuses its profile instead of adding a duplicate", async () => {
+  const profile = { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" };
+  const { chrome, storage } = createStorage({
+    proxyProfiles: [{ id: "profile-a", name: "Work", ...profile }],
+    selectedProfileId: "",
+  });
+
+  await storage.saveConnection({ profile, password: "secret", parsedProxy: null, profileId: "" });
+
+  assert.equal(chrome.storage.local.data.proxyProfiles.length, 1);
+  assert.equal(chrome.storage.local.data.activeProfileId, "profile-a");
+  assert.equal(chrome.storage.local.data.profilePasswords["profile-a"], "secret");
+});
+
+test("renameProfile renames without touching other profiles and avoids duplicate names", async () => {
+  const { storage } = createStorage();
+  const first = await storage.saveProfile({
+    name: "One",
+    profile: { scheme: "http", host: "one.example.com", port: 8080, username: "" },
+  });
+  await storage.saveProfile({
+    name: "Two",
+    profile: { scheme: "http", host: "two.example.com", port: 8080, username: "" },
+  });
+
+  assert.equal((await storage.renameProfile(first.id, "  Home  ")).name, "Home");
+  assert.equal((await storage.renameProfile(first.id, "two")).name, "two-2");
+  assert.equal((await storage.renameProfile(first.id, "two-2")).name, "two-2");
+  await assert.rejects(() => storage.renameProfile(first.id, "   "), /name is required/i);
+  await assert.rejects(() => storage.renameProfile("missing", "x"), /not found/);
+  assert.deepEqual(plain((await storage.getProfiles()).map((profile) => profile.name)), ["two-2", "Two"]);
+});
+
+test("setSettings stores only known boolean settings", async () => {
+  const { chrome, storage } = createStorage();
+
+  await storage.setSettings({ blockOnFailure: true, webRtcProtection: "yes", other: true });
+
+  assert.equal(chrome.storage.local.data.blockOnFailure, true);
+  assert.equal(chrome.storage.local.data.webRtcProtection, undefined);
+  assert.equal(chrome.storage.local.data.other, undefined);
 });
 
 test("cleanup removes SOCKS5 profiles and disconnects an active SOCKS5 proxy", async () => {
@@ -201,6 +251,7 @@ test("getAuthState requires active local state and active session state", async 
       scheme: "http",
     },
     sessionConnected: true,
+    blocked: false,
   });
 });
 

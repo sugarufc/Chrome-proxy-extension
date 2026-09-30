@@ -5,6 +5,7 @@
   const SCHEMA_VERSION_KEY = "schemaVersion";
   const SESSION_PASSWORD_KEY = "sessionPassword";
   const SESSION_CONNECTED_KEY = "sessionConnected";
+  const SESSION_BLOCKED_KEY = "authBlocked";
   const LOCAL_PASSWORD_KEY = "savedPassword";
   const PROFILES_KEY = "proxyProfiles";
   const PROFILE_PASSWORDS_KEY = "profilePasswords";
@@ -24,7 +25,10 @@
     LOCAL_PASSWORD_KEY,
     "parsedProxy",
     "lastError",
+    "blockOnFailure",
+    "webRtcProtection",
   ];
+  const SETTING_KEYS = ["blockOnFailure", "webRtcProtection"];
   // Keys written by older versions. They are dropped on every connect and on forget-all.
   const LEGACY_SECRET_KEYS = [
     "lastProxyError",
@@ -189,7 +193,8 @@
       }
     }
 
-    return "";
+    const existing = profiles.find((item) => profilesMatch(item, profile));
+    return existing ? existing.id : "";
   }
 
   async function migrateLegacySavedPassword() {
@@ -377,6 +382,31 @@
     return savedProfile;
   }
 
+  async function renameProfile(profileId, name) {
+    const id = String(profileId || "");
+    const requestedName = normalizeProfileName(name);
+    const profiles = await getProfiles();
+    const index = profiles.findIndex((profile) => profile.id === id);
+    if (index < 0) {
+      throw new Error("Selected profile was not found.");
+    }
+
+    const others = profiles.filter((_profile, profileIndex) => profileIndex !== index);
+    profiles[index] = { ...profiles[index], name: deduplicateProfileName(others, requestedName) };
+    await setLocal({ [PROFILES_KEY]: profiles });
+    return profiles[index];
+  }
+
+  async function setSettings(settings) {
+    const values = {};
+    for (const key of SETTING_KEYS) {
+      if (settings && typeof settings[key] === "boolean") {
+        values[key] = settings[key];
+      }
+    }
+    await setLocal(values);
+  }
+
   async function deleteProfile(profileId) {
     const id = String(profileId || "");
     const state = await getLocal([PROFILES_KEY, PROFILE_PASSWORDS_KEY, SELECTED_PROFILE_ID_KEY, ACTIVE_PROFILE_ID_KEY]);
@@ -449,27 +479,29 @@
     ]);
   }
 
+  // Every connected proxy is a saved profile, so the shortcut and the browser-restart
+  // reconnect always find its password. Unknown proxies are saved under their host name.
   async function saveConnection({ profile, password, parsedProxy, profileId }) {
-    const resolvedProfileId = await resolveConnectionProfileId(profile, profileId);
-    const localPayload = {
+    let resolvedProfileId = await resolveConnectionProfileId(profile, profileId);
+    if (!resolvedProfileId) {
+      const created = await saveProfile({ name: profile.host, profile, password });
+      resolvedProfileId = created.id;
+    } else {
+      await setProfilePassword(resolvedProfileId, password);
+    }
+
+    await removeLocal([...LEGACY_SECRET_KEYS, LOCAL_PASSWORD_KEY]);
+    await setLocal({
       active: true,
       proxyProfile: profile,
       // Snapshot of the connected proxy. Auth challenges and session restore must keep
       // using this even if the user switches or edits profiles without reconnecting.
       [ACTIVE_PROXY_KEY]: profile,
       [ACTIVE_PROFILE_ID_KEY]: resolvedProfileId,
+      [SELECTED_PROFILE_ID_KEY]: resolvedProfileId,
       parsedProxy,
       lastError: "",
-      // An unsaved proxy must not leave an unrelated saved profile selected in the popup.
-      [SELECTED_PROFILE_ID_KEY]: resolvedProfileId,
-    };
-
-    if (resolvedProfileId) {
-      await setProfilePassword(resolvedProfileId, password);
-    }
-
-    await removeLocal([...LEGACY_SECRET_KEYS, LOCAL_PASSWORD_KEY]);
-    await setLocal(localPayload);
+    });
 
     await restoreSession(password || "");
   }
@@ -478,6 +510,7 @@
     await setSession({
       [SESSION_PASSWORD_KEY]: password || "",
       [SESSION_CONNECTED_KEY]: true,
+      [SESSION_BLOCKED_KEY]: false,
     });
   }
 
@@ -491,6 +524,15 @@
     return Boolean(sessionState[SESSION_CONNECTED_KEY]);
   }
 
+  async function isAuthBlocked() {
+    const sessionState = await getSession([SESSION_BLOCKED_KEY]);
+    return Boolean(sessionState[SESSION_BLOCKED_KEY]);
+  }
+
+  async function setAuthBlocked(blocked) {
+    await setSession({ [SESSION_BLOCKED_KEY]: Boolean(blocked) });
+  }
+
   async function getAuthState() {
     const state = await getLocal(["active", "proxyProfile", ACTIVE_PROXY_KEY]);
     const sessionConnected = await isSessionConnected();
@@ -502,6 +544,7 @@
       active,
       proxyAuth: buildProxyAuth(connectedProfile, password),
       sessionConnected,
+      blocked: active && (await isAuthBlocked()),
     };
   }
 
@@ -576,6 +619,7 @@
     PROFILE_PASSWORDS_KEY,
     SESSION_PASSWORD_KEY,
     SESSION_CONNECTED_KEY,
+    SESSION_BLOCKED_KEY,
     PROFILES_KEY,
     SELECTED_PROFILE_ID_KEY,
     ACTIVE_PROFILE_ID_KEY,
@@ -587,6 +631,8 @@
     getProfilePassword,
     setProfilePassword,
     saveProfile,
+    renameProfile,
+    setSettings,
     deleteProfile,
     selectProfile,
     cleanupUnsupportedProfiles,
@@ -597,6 +643,8 @@
     restoreSession,
     resolveSessionPassword,
     isSessionConnected,
+    isAuthBlocked,
+    setAuthBlocked,
     getAuthState,
     getFullState,
     acceptDisclaimer,

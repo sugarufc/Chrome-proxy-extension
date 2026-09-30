@@ -1,6 +1,14 @@
 # Release Notes
 
-## Unreleased
+## 3.3.0
+
+- **New:** every connected proxy is saved automatically as a profile (named after its host), so the keyboard shortcut
+  and the reconnect after a browser restart always work. "Unsaved proxy" is now "New proxy".
+- **New:** rename a profile from the popup.
+- **New (optional):** "Block traffic if the proxy login fails" keeps Chrome pointed at the proxy so requests fail
+  instead of silently going out directly, and stops sending the wrong credentials to the provider.
+- **New (optional):** "Block WebRTC IP leaks" restricts WebRTC UDP while the proxy is on. It uses the optional
+  `privacy` permission, which Chrome asks for only when you enable the option.
 
 - **Fixed:** connecting to a different proxy while a saved profile was selected overwrote that profile's password,
   so the profile later showed its own host with the wrong password. A connection is now tied to a saved profile only

@@ -149,7 +149,7 @@ test("background connect stores auth state before applying controlled proxy sett
   assert.equal(chrome.storage.local.data.proxyProfile.host, "proxy.example.com");
   assert.equal(chrome.storage.local.data.activeProxy.host, "proxy.example.com");
   assert.equal(chrome.storage.local.data.savedPassword, undefined);
-  assert.equal(chrome.storage.local.data.profilePasswords, undefined);
+  assert.deepEqual(Object.values(chrome.storage.local.data.profilePasswords), ["secret"]);
   assert.equal(chrome.storage.session.data.sessionPassword, "secret");
   assert.equal(chrome.action.iconCalls.length, 1);
 });
@@ -473,22 +473,6 @@ test("background reports an authentication failure instead of a generic check er
   assert.equal(response.testResult.message, "Proxy authentication failed. Proxy disconnected.");
 });
 
-test("background status exposes the session password of a connected unsaved proxy", async () => {
-  const proxy = { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" };
-  const chrome = loadBackground(
-    { disclaimerAccepted: true, active: true, activeProxy: proxy, proxyProfile: proxy, selectedProfileId: "" },
-    { sessionConnected: true, sessionPassword: "session-secret" },
-  );
-
-  const response = await sendBackgroundMessage(chrome, { command: "getStatus" });
-  assert.equal(response.selectedPassword, "session-secret");
-
-  // A different form profile must not receive the connected proxy's password.
-  chrome.storage.local.data.proxyProfile = { ...proxy, host: "other.example.com" };
-  const other = await sendBackgroundMessage(chrome, { command: "getStatus" });
-  assert.equal(other.selectedPassword, "");
-});
-
 test("background connect does not overwrite the selected profile when a different proxy is connected", async () => {
   const saved = { scheme: "http", host: "saved.example.com", port: 8080, username: "saved-user" };
   const chrome = loadBackgroundWithOptions({
@@ -510,7 +494,8 @@ test("background connect does not overwrite the selected profile when a differen
   });
 
   assert.equal(response.ok, true);
-  assert.equal(response.state.selectedProfileId, "");
+  assert.notEqual(response.state.selectedProfileId, "profile-a");
   assert.equal(response.selectedPassword, "typed-secret");
+  assert.equal(response.state.proxyProfiles.length, 2);
   assert.equal(chrome.storage.local.data.profilePasswords["profile-a"], "saved-secret");
 });

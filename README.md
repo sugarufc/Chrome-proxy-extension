@@ -15,9 +15,11 @@ The extension applies proxy settings locally inside Chrome. It does not provide 
 
 - Accepts a proxy pasted as a single string: `scheme://user:pass@host:port`, `host:port`, or `host:port:user:pass`
 - Turns the proxy on and off with a single toggle (or the `Alt+Shift+P` keyboard shortcut)
-- Verifies the connection automatically after turning the proxy on and shows the response time
+- Tests the connection on demand (click the status line) and shows the response time or the reason it failed
 - Reconnects the proxy automatically after a browser restart if it was on
-- Saves multiple named proxy profiles
+- Saves every connected proxy as a named profile (named after its host, renameable)
+- Optionally blocks traffic instead of falling back to a direct connection when the proxy login fails
+- Optionally blocks WebRTC IP leaks while the proxy is on (asks for the optional `privacy` permission first)
 - Applies the proxy configuration to Chrome through the Chrome Proxy API
 - Always connects to local addresses (`localhost`, `127.0.0.1`, `<local>`) directly, without the proxy
 - Explains common Chrome proxy errors in plain language
@@ -38,13 +40,14 @@ The extension applies proxy settings locally inside Chrome. It does not provide 
 
 ## Permissions explained
 
-| Permission               | Why it is required                                                                                                   |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| `proxy`                  | Apply and clear the user's proxy configuration in Chrome                                                             |
-| `storage`                | Save proxy settings and local preferences on the device                                                              |
-| `webRequest`             | Handle proxy authentication challenges for the configured proxy                                                      |
-| `webRequestAuthProvider` | Provide username and password to the configured proxy when Chrome requests proxy authentication                      |
-| `<all_urls>`             | Required by Chrome so proxy authentication callbacks can be handled for requests routed through the configured proxy |
+| Permission               | Why it is required                                                                                                     |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `proxy`                  | Apply and clear the user's proxy configuration in Chrome                                                               |
+| `storage`                | Save proxy settings and local preferences on the device                                                                |
+| `webRequest`             | Handle proxy authentication challenges for the configured proxy                                                        |
+| `webRequestAuthProvider` | Provide username and password to the configured proxy when Chrome requests proxy authentication                        |
+| `privacy` (optional)     | Only if you enable "Block WebRTC IP leaks": restrict WebRTC UDP so it cannot reveal your real IP while the proxy is on |
+| `<all_urls>`             | Required by Chrome so proxy authentication callbacks can be handled for requests routed through the configured proxy   |
 
 These permissions are not used to collect browsing history or transmit user data to the developer.
 

@@ -91,6 +91,7 @@ function createChromeMock({
   proxySetError = "",
   proxyClearError = "",
   proxyGetError = "",
+  withPrivacy = false,
 } = {}) {
   const operationLog = [];
   const chrome = {
@@ -155,6 +156,26 @@ function createChromeMock({
       local: createStorageArea(local, "storage.local", operationLog),
       session: createStorageArea(session, "storage.session", operationLog),
     },
+    ...(withPrivacy
+      ? {
+          privacy: {
+            network: {
+              webRTCIPHandlingPolicy: {
+                setCalls: [],
+                clearCalls: 0,
+                set(value, callback = () => {}) {
+                  this.setCalls.push(value);
+                  callback();
+                },
+                clear(_value, callback = () => {}) {
+                  this.clearCalls += 1;
+                  callback();
+                },
+              },
+            },
+          },
+        }
+      : {}),
     webRequest: {
       onAuthRequired: createEventMock(),
       onCompleted: createEventMock(),

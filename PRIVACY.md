@@ -77,6 +77,7 @@ The extension requests Chrome permissions only to:
 - apply and clear the user's proxy configuration
 - store user preferences and credentials locally
 - respond to proxy authentication challenges for the configured proxy
+- optionally (only if you turn on "Block WebRTC IP leaks" and approve the prompt) change Chrome's WebRTC IP handling policy while the proxy is on
 
 These permissions are not used to collect browsing history or monitor website activity for the developer.
 

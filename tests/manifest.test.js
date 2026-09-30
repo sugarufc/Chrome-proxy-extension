@@ -26,7 +26,7 @@ test("manifest version stays in sync with package.json", () => {
   const packageJson = readJson("package.json");
 
   assert.equal(manifest.version, packageJson.version);
-  assert.equal(manifest.version, "3.2.0");
+  assert.equal(manifest.version, "3.3.0");
 });
 
 test("manifest version is newer than the last Chrome Web Store package", () => {
@@ -62,6 +62,7 @@ test("manifest requests only the permissions the extension uses", () => {
   const manifest = readJson("manifest.json");
 
   assert.deepEqual(manifest.permissions.sort(), ["proxy", "storage", "webRequest", "webRequestAuthProvider"]);
+  assert.deepEqual(manifest.optional_permissions, ["privacy"]);
   assert.deepEqual(manifest.host_permissions, ["<all_urls>"]);
 });
 

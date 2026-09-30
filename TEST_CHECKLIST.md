@@ -34,6 +34,13 @@ Use this checklist before submitting to the Chrome Web Store.
 - [ ] A failed check names the reason (stopped proxy, wrong host, refused connection) and never shows `net::` codes
 - [ ] Right after a browser restart with the proxy on, no Chrome proxy sign-in dialog appears
 
+## Options and profiles
+
+- [ ] Connecting a proxy that is not saved creates a profile named after its host and selects it
+- [ ] Rename changes the profile name (Enter saves, Escape cancels)
+- [ ] "Block traffic if the proxy login fails": with a wrong password the status shows "Blocked", pages fail to load, and turning the proxy off restores direct browsing
+- [ ] "Block WebRTC IP leaks" asks for the privacy permission, and a WebRTC leak test shows no real IP while the proxy is on and after turning it off shows the normal behavior again
+
 ## Keyboard shortcut
 
 - [ ] `Alt+Shift+P` turns the proxy on using the saved settings

@@ -461,3 +461,115 @@ test("proxy auth attempts are bounded without completed/error webRequest listene
     },
   });
 });
+
+test("with block-on-failure a rejected login keeps the proxy set and stops sending credentials", async () => {
+  const { chrome, context } = loadBackground(
+    {
+      active: true,
+      blockOnFailure: true,
+      proxyProfile: { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" },
+    },
+    { sessionConnected: true, sessionPassword: "wrong" },
+  );
+  const challenge = (requestId) => ({
+    requestId,
+    isProxy: true,
+    challenger: { host: "proxy.example.com", port: 8080 },
+  });
+
+  await callAuthRequired(context, challenge("a"));
+  await callAuthRequired(context, challenge("a"));
+  assert.deepEqual(plain(await callAuthRequired(context, challenge("a"))), { cancel: true });
+
+  assert.equal(chrome.proxy.settings.clearCalls.length, 0);
+  assert.equal(chrome.storage.local.data.active, true);
+  assert.equal(chrome.storage.session.data.authBlocked, true);
+  assert.match(chrome.storage.local.data.lastError, /blocked/i);
+  assert.equal(chrome.action.badgeTextCalls.at(-1).text, "!");
+
+  // Other requests get no credentials while blocked, so the provider is not hammered.
+  assert.deepEqual(plain(await callAuthRequired(context, challenge("b"))), { cancel: true });
+});
+
+test("reconnecting after a block re-enables credentials", async () => {
+  const chrome = createChromeMock({
+    local: { disclaimerAccepted: true, blockOnFailure: true },
+    session: { sessionConnected: true, authBlocked: true },
+  });
+  const context = createRuntimeContext({ chrome, includeStorage: false, includeBackground: true });
+  const [{ listener }] = chrome.runtime.onMessage.listeners;
+
+  await new Promise((resolve) =>
+    listener(
+      {
+        command: "connect",
+        profile: { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" },
+        password: "right",
+      },
+      {},
+      resolve,
+    ),
+  );
+
+  const granted = await callAuthRequired(context, {
+    requestId: "fresh",
+    isProxy: true,
+    challenger: { host: "proxy.example.com", port: 8080 },
+  });
+  assert.deepEqual(plain(granted), { authCredentials: { username: "user", password: "right" } });
+});
+
+test("WebRTC protection applies only while the proxy is on and the user opted in", async () => {
+  const chrome = createChromeMock({ local: { disclaimerAccepted: true }, withPrivacy: true });
+  createRuntimeContext({ chrome, includeStorage: false, includeBackground: true });
+  const [{ listener }] = chrome.runtime.onMessage.listeners;
+  const send = (message) => new Promise((resolve) => listener(message, {}, resolve));
+  const policy = chrome.privacy.network.webRTCIPHandlingPolicy;
+  const profile = { scheme: "http", host: "proxy.example.com", port: 8080, username: "" };
+
+  await send({ command: "connect", profile });
+  assert.equal(policy.setCalls.length, 0);
+
+  await send({ command: "setSettings", settings: { webRtcProtection: true } });
+  assert.deepEqual(plain(policy.setCalls.at(-1)), { value: "disable_non_proxied_udp" });
+
+  const clearedBefore = policy.clearCalls;
+  await send({ command: "disconnect" });
+  assert.equal(policy.clearCalls, clearedBefore + 1);
+});
+
+test("background works without the optional privacy permission", async () => {
+  const chrome = createChromeMock({ local: { disclaimerAccepted: true, webRtcProtection: true } });
+  createRuntimeContext({ chrome, includeStorage: false, includeBackground: true });
+  const [{ listener }] = chrome.runtime.onMessage.listeners;
+
+  const response = await new Promise((resolve) =>
+    listener(
+      { command: "connect", profile: { scheme: "http", host: "proxy.example.com", port: 8080, username: "" } },
+      {},
+      resolve,
+    ),
+  );
+
+  assert.equal(response.ok, true);
+});
+
+test("renameProfile and setSettings commands return the updated status", async () => {
+  const chrome = createChromeMock({ local: { disclaimerAccepted: true } });
+  createRuntimeContext({ chrome, includeStorage: false, includeBackground: true });
+  const [{ listener }] = chrome.runtime.onMessage.listeners;
+  const send = (message) => new Promise((resolve) => listener(message, {}, resolve));
+
+  const saved = await send({
+    command: "saveProfile",
+    name: "one.example.com",
+    profile: { scheme: "http", host: "one.example.com", port: 8080, username: "" },
+  });
+  const profileId = saved.state.selectedProfileId;
+
+  const renamed = await send({ command: "renameProfile", profileId, name: "Home" });
+  assert.equal(renamed.state.proxyProfiles[0].name, "Home");
+
+  const settings = await send({ command: "setSettings", settings: { blockOnFailure: true } });
+  assert.equal(settings.state.blockOnFailure, true);
+});

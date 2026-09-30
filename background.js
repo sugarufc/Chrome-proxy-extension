@@ -4,6 +4,8 @@ importScripts("shared.js", "storage-manager.js");
 
 const AUTH_RETRY_LIMIT = 2;
 const AUTH_FAILURE_MESSAGE = "Proxy authentication failed. Proxy disconnected.";
+const AUTH_BLOCKED_MESSAGE = "Proxy login failed. Traffic is blocked. Turn the proxy off or fix the login.";
+const WEBRTC_POLICY = "disable_non_proxied_udp";
 const AUTH_ATTEMPT_MAX_ENTRIES = 200;
 const AUTH_ATTEMPT_TTL_MS = 5 * 60 * 1000;
 const TEST_CONNECTION_URL = "https://www.gstatic.com/generate_204";
@@ -66,8 +68,49 @@ function setActionIcon(active) {
   });
 }
 
-async function disconnectAfterAuthFailure() {
+// Regular tabs and calls leak the real IP through WebRTC unless its UDP is restricted.
+// The policy applies only while the proxy is on and only after the user opted in.
+async function syncWebRtcProtection(active) {
+  const setting = chrome.privacy && chrome.privacy.network && chrome.privacy.network.webRTCIPHandlingPolicy;
+  if (!setting) {
+    return;
+  }
+
+  const { webRtcProtection } = await ProxyStorage.getLocal(["webRtcProtection"]);
+  await new Promise((resolve) => {
+    const done = () => {
+      void chrome.runtime.lastError;
+      resolve();
+    };
+    if (active && webRtcProtection) {
+      setting.set({ value: WEBRTC_POLICY }, done);
+    } else {
+      setting.clear({}, done);
+    }
+  });
+}
+
+async function markConnectionState(active) {
+  setActionIcon(active);
+  await syncWebRtcProtection(active);
+}
+
+async function handleAuthFailure() {
   authAttemptsByRequest.clear();
+
+  const { blockOnFailure } = await ProxyStorage.getLocal(["blockOnFailure"]);
+  if (blockOnFailure) {
+    // Keep Chrome pointed at the proxy so traffic fails instead of leaking directly; the
+    // auth handler stops sending credentials until the user reconnects.
+    await ProxyStorage.setAuthBlocked(true);
+    await ProxyStorage.setLocal({ lastError: AUTH_BLOCKED_MESSAGE });
+    await markConnectionState(true);
+    chrome.action.setBadgeText({ text: "!" });
+    chrome.action.setBadgeBackgroundColor({ color: "#d93025" });
+    chrome.action.setTitle({ title: AUTH_BLOCKED_MESSAGE });
+    return;
+  }
+
   try {
     await proxySettingsClear();
   } catch (_error) {
@@ -75,7 +118,7 @@ async function disconnectAfterAuthFailure() {
   }
   await ProxyStorage.setDisconnected();
   await ProxyStorage.setLocal({ lastError: AUTH_FAILURE_MESSAGE });
-  setActionIcon(false);
+  await markConnectionState(false);
 }
 
 // Chrome may report the resolved proxy IP as the challenger host even when the profile stores
@@ -139,17 +182,21 @@ async function resolveAuthResponse(details) {
   const now = Date.now();
   pruneAuthAttempts(now);
 
-  const { active, proxyAuth } = await getAuthStateWithRestore();
+  const { active, blocked, proxyAuth } = await getAuthStateWithRestore();
   if (!active || !isCurrentProxyChallenge(details, proxyAuth)) {
     authAttemptsByRequest.delete(details.requestId);
     return {};
+  }
+
+  if (blocked) {
+    return { cancel: true };
   }
 
   const attempt = authAttemptsByRequest.get(details.requestId);
   const attempts = attempt ? attempt.count : 0;
   if (attempts >= AUTH_RETRY_LIMIT) {
     authAttemptsByRequest.delete(details.requestId);
-    await disconnectAfterAuthFailure();
+    await handleAuthFailure();
     return { cancel: true };
   }
 
@@ -161,7 +208,7 @@ function handleAuthRequired(details, asyncCallback) {
   resolveAuthResponse(details)
     .catch(async () => {
       try {
-        await disconnectAfterAuthFailure();
+        await handleAuthFailure();
       } catch (_error) {
         // The request is cancelled below regardless.
       }
@@ -173,15 +220,9 @@ function handleAuthRequired(details, asyncCallback) {
 async function getStatusPayload(options = {}) {
   const state = await ProxyStorage.getFullState();
   const sessionConnected = await ProxyStorage.isSessionConnected();
-  let selectedPassword = "";
-
-  if (state.selectedProfileId) {
-    selectedPassword = await ProxyStorage.getProfilePassword(state.selectedProfileId);
-  } else if (state.active && sessionConnected && ProxyStorage.profilesMatch(state.activeProxy, state.proxyProfile)) {
-    // Connected to an unsaved proxy: its password exists only in the session, and the popup
-    // needs it to show (and later reuse) the proxy that is actually running.
-    selectedPassword = await ProxyStorage.resolveSessionPassword();
-  }
+  const selectedPassword = state.selectedProfileId
+    ? await ProxyStorage.getProfilePassword(state.selectedProfileId)
+    : "";
 
   // The popup receives only the selected profile password through the dedicated
   // field below; keep all secrets out of the general state object.
@@ -191,6 +232,7 @@ async function getStatusPayload(options = {}) {
   return {
     state,
     sessionConnected,
+    blocked: Boolean(state.active && sessionConnected && (await ProxyStorage.isAuthBlocked())),
     selectedPassword,
     status: options.status || "",
     message: options.message || "",
@@ -199,7 +241,7 @@ async function getStatusPayload(options = {}) {
 
 async function getCurrentStatus() {
   const payload = await getStatusPayload();
-  setActionIcon(Boolean(payload.state.active && payload.sessionConnected));
+  await markConnectionState(Boolean(payload.state.active && payload.sessionConnected));
   return payload;
 }
 
@@ -272,18 +314,18 @@ async function connectProxy(message) {
     } catch (_clearError) {
       // Preserve the original connection error.
     }
-    setActionIcon(false);
+    await markConnectionState(false);
     throw error;
   }
 
-  setActionIcon(true);
+  await markConnectionState(true);
   return getStatusPayload({ status: "connected" });
 }
 
 async function disconnectProxy() {
   await proxySettingsClear();
   await ProxyStorage.setDisconnected();
-  setActionIcon(false);
+  await markConnectionState(false);
 
   return getStatusPayload({ status: "disconnected" });
 }
@@ -291,7 +333,7 @@ async function disconnectProxy() {
 async function forgetAllData() {
   await proxySettingsClear();
   await ProxyStorage.forgetAllData();
-  setActionIcon(false);
+  await markConnectionState(false);
 
   return getStatusPayload({ status: "disconnected" });
 }
@@ -319,6 +361,18 @@ async function deleteProfile(message) {
 async function selectProfile(message) {
   await ProxyStorage.selectProfile(message.profileId);
   return getStatusPayload();
+}
+
+async function renameProfile(message) {
+  await ProxyStorage.renameProfile(message.profileId, message.name);
+  return getStatusPayload();
+}
+
+async function setSettings(message) {
+  await ProxyStorage.setSettings(message.settings);
+  const payload = await getStatusPayload();
+  await markConnectionState(Boolean(payload.state.active && payload.sessionConnected));
+  return payload;
 }
 
 async function testConnection() {
@@ -350,6 +404,10 @@ async function runRuntimeCommand(message) {
       return deleteProfile(message);
     case "selectProfile":
       return selectProfile(message);
+    case "renameProfile":
+      return renameProfile(message);
+    case "setSettings":
+      return setSettings(message);
     case "testConnection":
       return testConnection();
     default:
@@ -365,6 +423,8 @@ const EXCLUSIVE_COMMANDS = new Set([
   "saveProfile",
   "deleteProfile",
   "selectProfile",
+  "renameProfile",
+  "setSettings",
 ]);
 
 // Failures of these commands are stored so the popup can show why the proxy is off.
@@ -385,7 +445,7 @@ async function persistCommandError(command, errorMessage) {
   });
 
   if (command === "connect") {
-    setActionIcon(false);
+    await markConnectionState(false);
   }
 }
 
@@ -424,7 +484,7 @@ async function deactivateProxy(errorMessage) {
     active: false,
     ...(sanitizedError ? { lastError: sanitizedError } : {}),
   });
-  setActionIcon(false);
+  await markConnectionState(false);
   if (sanitizedError) {
     chrome.action.setBadgeText({ text: "!" });
     chrome.action.setBadgeBackgroundColor({ color: "#d93025" });
@@ -444,7 +504,7 @@ async function restoreProxyForCurrentSession() {
   const connectedProfile = state.activeProxy || state.proxyProfile;
 
   if (!state.active || !connectedProfile) {
-    setActionIcon(false);
+    await markConnectionState(false);
     return;
   }
 
@@ -465,7 +525,7 @@ async function restoreProxyForCurrentSession() {
       // a browser restart using the locally saved password.
       await ProxyStorage.restoreSession(password);
     }
-    setActionIcon(true);
+    await markConnectionState(true);
   } catch (error) {
     await deactivateProxy(error && error.message ? error.message : "Failed to restore the proxy.");
   }
