@@ -79,13 +79,29 @@ test("popup uses inline confirmations instead of blocking browser dialogs", () =
   assert.match(popupSource, /4_000/);
 });
 
-test("popup connects on Enter and tests the connection after connect succeeds", () => {
+test("popup connects on Enter but runs connection checks only from the status line", () => {
   const popupSource = fs.readFileSync(path.join(rootDir, "popup.js"), "utf8");
+  const connectSource = popupSource.match(
+    /async function connect\(\) \{([\s\S]*?)\n    \}\n\n    async function disconnect/,
+  );
 
+  assert.ok(connectSource);
   assert.match(popupSource, /proxyInput\.addEventListener\("keydown"/);
   assert.match(popupSource, /event\.key !== "Enter"/);
-  assert.match(popupSource, /setStatusLine\("testing", "Checking…"\)/);
-  assert.match(popupSource, /sendCommand\("testConnection"\)/);
+  assert.doesNotMatch(connectSource[1], /runConnectionCheck/);
+  assert.match(popupSource, /statusLine\.addEventListener\("click", retestConnection\)/);
+  assert.doesNotMatch(popupSource, /state\.lastProxyError/);
+});
+
+test("popup ignores storage changes while its own command is running and labels the save button", () => {
+  const popupSource = fs.readFileSync(path.join(rootDir, "popup.js"), "utf8");
+
+  assert.match(
+    popupSource,
+    /chrome\.storage\.onChanged\.addListener\(\(changes, areaName\) => \{\s*\/\/[^\n]*\n\s*if \(busy\)/,
+  );
+  assert.match(popupSource, /"Update profile" : "Save as profile"/);
+  assert.doesNotMatch(popupSource, /lastProxyError/);
 });
 
 test("popup renders the installed manifest version in a shared footer label", () => {
@@ -333,7 +349,12 @@ test("background saveProfile stores the password only for the saved profile", as
 
 test("background testConnection fetches generate_204 only after explicit command", async () => {
   const fetchCalls = [];
-  const chrome = loadBackgroundWithOptions({
+  const chrome = createChromeMock({
+    local: { active: true },
+    session: { sessionConnected: true },
+  });
+  loadBackgroundWithOptions({
+    chrome,
     fetch: async (url, options) => {
       fetchCalls.push({ url, options });
       return { status: 204 };
@@ -354,8 +375,28 @@ test("background testConnection fetches generate_204 only after explicit command
   assert.equal(fetchCalls[0].url, "https://www.gstatic.com/generate_204");
 });
 
+test("background testConnection makes no request while the proxy is off", async () => {
+  const fetchCalls = [];
+  const chrome = loadBackgroundWithOptions({
+    chrome: createChromeMock({ local: { active: false } }),
+    fetch: async (url) => {
+      fetchCalls.push(url);
+      return { status: 204 };
+    },
+  });
+
+  const response = await sendBackgroundMessage(chrome, { command: "testConnection" });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.testResult.ok, false);
+  assert.match(response.testResult.message, /turn the proxy on/i);
+  assert.deepEqual(fetchCalls, []);
+});
+
 test("background reports connection check failures in plain language", async () => {
+  const activeChrome = () => createChromeMock({ local: { active: true }, session: { sessionConnected: true } });
   const unreachable = loadBackgroundWithOptions({
+    chrome: activeChrome(),
     fetch: async () => {
       throw new TypeError("Failed to fetch");
     },
@@ -367,6 +408,7 @@ test("background reports connection check failures in plain language", async () 
   assert.equal(unreachableResponse.testResult.message, "The proxy is not responding.");
 
   const intercepted = loadBackgroundWithOptions({
+    chrome: activeChrome(),
     fetch: async () => ({ status: 200 }),
   });
   const interceptedResponse = await sendBackgroundMessage(intercepted, { command: "testConnection" });
@@ -375,15 +417,15 @@ test("background reports connection check failures in plain language", async () 
   assert.equal(interceptedResponse.testResult.message, "Unexpected response from the network (HTTP 200).");
 });
 
-test("background preserves the specific Chrome proxy error when a connection check fails", async () => {
-  const chrome = createChromeMock();
+test("background explains a failed connection check with the net error Chrome reported", async () => {
+  const chrome = createChromeMock({ local: { active: true }, session: { sessionConnected: true } });
   createRuntimeContext({
     chrome,
     includeStorage: false,
     includeBackground: true,
     fetch: async () => {
-      const [{ listener }] = chrome.proxy.onProxyError.listeners;
-      listener({ error: "net::ERR_PROXY_CERTIFICATE_INVALID" });
+      const [{ listener }] = chrome.webRequest.onErrorOccurred.listeners;
+      listener({ error: "net::ERR_PROXY_CONNECTION_FAILED" });
       throw new TypeError("Failed to fetch");
     },
   });
@@ -391,5 +433,84 @@ test("background preserves the specific Chrome proxy error when a connection che
   const response = await sendBackgroundMessage(chrome, { command: "testConnection" });
 
   assert.equal(response.testResult.ok, false);
-  assert.equal(response.testResult.message, "net::ERR_PROXY_CERTIFICATE_INVALID");
+  assert.equal(response.testResult.message, "Can't reach the proxy server. Check the address and port.");
+});
+
+test("background ignores self-inflicted request errors when explaining a failed check", async () => {
+  const chrome = createChromeMock({ local: { active: true }, session: { sessionConnected: true } });
+  createRuntimeContext({
+    chrome,
+    includeStorage: false,
+    includeBackground: true,
+    fetch: async () => {
+      const [{ listener }] = chrome.webRequest.onErrorOccurred.listeners;
+      listener({ error: "net::ERR_BLOCKED_BY_CLIENT" });
+      throw new TypeError("Failed to fetch");
+    },
+  });
+
+  const response = await sendBackgroundMessage(chrome, { command: "testConnection" });
+
+  assert.equal(response.testResult.message, "The proxy is not responding.");
+});
+
+test("background reports an authentication failure instead of a generic check error", async () => {
+  const chrome = createChromeMock({ local: { active: true }, session: { sessionConnected: true } });
+  createRuntimeContext({
+    chrome,
+    includeStorage: false,
+    includeBackground: true,
+    fetch: async () => {
+      // The auth handler gave up and disconnected while the check request was pending.
+      chrome.storage.local.data.active = false;
+      chrome.storage.local.data.lastError = "Proxy authentication failed. Proxy disconnected.";
+      throw new TypeError("Failed to fetch");
+    },
+  });
+
+  const response = await sendBackgroundMessage(chrome, { command: "testConnection" });
+
+  assert.equal(response.testResult.message, "Proxy authentication failed. Proxy disconnected.");
+});
+
+test("background status exposes the session password of a connected unsaved proxy", async () => {
+  const proxy = { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" };
+  const chrome = loadBackground(
+    { disclaimerAccepted: true, active: true, activeProxy: proxy, proxyProfile: proxy, selectedProfileId: "" },
+    { sessionConnected: true, sessionPassword: "session-secret" },
+  );
+
+  const response = await sendBackgroundMessage(chrome, { command: "getStatus" });
+  assert.equal(response.selectedPassword, "session-secret");
+
+  // A different form profile must not receive the connected proxy's password.
+  chrome.storage.local.data.proxyProfile = { ...proxy, host: "other.example.com" };
+  const other = await sendBackgroundMessage(chrome, { command: "getStatus" });
+  assert.equal(other.selectedPassword, "");
+});
+
+test("background connect does not overwrite the selected profile when a different proxy is connected", async () => {
+  const saved = { scheme: "http", host: "saved.example.com", port: 8080, username: "saved-user" };
+  const chrome = loadBackgroundWithOptions({
+    chrome: createChromeMock({
+      local: {
+        disclaimerAccepted: true,
+        selectedProfileId: "profile-a",
+        proxyProfiles: [{ id: "profile-a", name: "Saved", ...saved }],
+        profilePasswords: { "profile-a": "saved-secret" },
+      },
+    }),
+  });
+
+  const response = await sendBackgroundMessage(chrome, {
+    command: "connect",
+    profileId: "profile-a",
+    profile: { scheme: "http", host: "typed.example.com", port: 9090, username: "typed-user" },
+    password: "typed-secret",
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(response.state.selectedProfileId, "");
+  assert.equal(response.selectedPassword, "typed-secret");
+  assert.equal(chrome.storage.local.data.profilePasswords["profile-a"], "saved-secret");
 });

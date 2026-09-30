@@ -103,8 +103,8 @@ This creates `dist/proxy-switcher.zip` with only runtime files.
 1. Load the extension unpacked or from the ZIP
 2. Accept the disclaimer
 3. Paste a proxy string (for example `http://user:pass@host:port` or `host:port:user:pass`)
-4. Flip the toggle on — the connection test runs automatically and shows the response time
-5. Click the status line to re-test at any time
+4. Flip the toggle on and confirm the status changes to connected
+5. Click the status line to run an optional connection test
 6. Optionally click **Save as profile** to store the current proxy as a named profile
 7. Try the `Alt+Shift+P` shortcut to toggle the proxy without opening the popup
 8. Flip the toggle off and confirm behavior

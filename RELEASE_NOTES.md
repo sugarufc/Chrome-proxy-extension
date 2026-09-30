@@ -1,4 +1,22 @@
-# Release Notes — 3.2.0
+# Release Notes
+
+## Unreleased
+
+- **Fixed:** connecting to a different proxy while a saved profile was selected overwrote that profile's password,
+  so the profile later showed its own host with the wrong password. A connection is now tied to a saved profile only
+  when it really is that profile; otherwise the dropdown shows "Unsaved proxy".
+- **Fixed:** the status line no longer flips to a premature "Connected" or overwrites a check result when storage
+  changes while a connect is in progress.
+- **Fixed:** the first requests after a browser start could show Chrome's own proxy sign-in dialog; the session is now
+  restored on demand from saved data.
+- **Fixed:** fast toggle / shortcut sequences could interleave; state-changing commands now run one at a time.
+- **Better errors:** a failed connection check reports the actual reason (unreachable, refused, unknown host, bad
+  certificate, wrong password) instead of always "The proxy is not responding." Old errors are cleared on browser start.
+- The connection check refuses to run while the proxy is off (it would only measure the direct connection).
+- The button reads "Update profile" when a saved profile is selected and "Save as profile" for an unsaved proxy.
+- Removed the unused `lastProxyError` state and dead code; the webRequest error listener is scoped to the check URL only.
+
+# 3.2.0
 
 **Release date:** July 29, 2026
 

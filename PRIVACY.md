@@ -59,11 +59,9 @@ The extension does not include analytics SDKs, advertising SDKs, or remote confi
 
 ## Connection test
 
-The extension verifies connectivity by requesting `https://www.gstatic.com/generate_204` from the background service
-worker and treating HTTP 204 as success. This check runs:
-
-- when you turn the proxy on (including via the keyboard shortcut), to confirm the proxy works
-- when you click the status line in the popup
+The extension can verify connectivity by requesting `https://www.gstatic.com/generate_204` from the background service
+worker and treating HTTP 204 as success. This optional check runs only when you click the status line in the popup;
+it is never started automatically.
 
 The request contains no proxy settings, credentials, profile names, browsing history, or any other user data, and
 nothing is sent to the developer. No connectivity checks run while the proxy is off.

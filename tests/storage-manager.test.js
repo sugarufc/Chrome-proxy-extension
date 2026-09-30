@@ -14,11 +14,12 @@ function plain(value) {
 }
 
 test("saveConnection stores the saved profile password separately and in the active session", async () => {
+  const profile = { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" };
   const { chrome, storage } = createStorage({
+    proxyProfiles: [{ id: "profile-a", name: "A", ...profile }],
     profilePasswords: { "profile-a": "old-secret", "profile-b": "other-secret" },
     rememberPassword: true,
   });
-  const profile = { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" };
 
   await storage.saveConnection({
     profile,
@@ -38,10 +39,11 @@ test("saveConnection stores the saved profile password separately and in the act
 });
 
 test("saveConnection without a password removes only that saved profile password", async () => {
+  const profile = { scheme: "http", host: "127.0.0.1", port: 8080, username: "" };
   const { chrome, storage } = createStorage({
+    proxyProfiles: [{ id: "profile-a", name: "A", ...profile }],
     profilePasswords: { "profile-a": "old-secret", "profile-b": "other-secret" },
   });
-  const profile = { scheme: "http", host: "127.0.0.1", port: 8080, username: "" };
 
   await storage.saveConnection({
     profile,
@@ -53,6 +55,24 @@ test("saveConnection without a password removes only that saved profile password
   assert.equal(chrome.storage.local.data.profilePasswords["profile-a"], undefined);
   assert.equal(chrome.storage.local.data.profilePasswords["profile-b"], "other-secret");
   assert.equal(chrome.storage.session.data.sessionConnected, true);
+});
+
+test("connecting to a different proxy never overwrites the selected profile's password", async () => {
+  const saved = { scheme: "http", host: "saved.example.com", port: 8080, username: "saved-user" };
+  const { chrome, storage } = createStorage({
+    proxyProfiles: [{ id: "profile-a", name: "Saved", ...saved }],
+    selectedProfileId: "profile-a",
+    profilePasswords: { "profile-a": "saved-secret" },
+  });
+  const other = { scheme: "http", host: "other.example.com", port: 9090, username: "other-user" };
+
+  await storage.saveConnection({ profile: other, password: "other-secret", parsedProxy: null, profileId: "profile-a" });
+
+  assert.equal(chrome.storage.local.data.profilePasswords["profile-a"], "saved-secret");
+  assert.equal(chrome.storage.local.data.activeProfileId, "");
+  assert.equal(chrome.storage.local.data.selectedProfileId, "");
+  assert.deepEqual(plain(chrome.storage.local.data.proxyProfile), other);
+  assert.equal(chrome.storage.session.data.sessionPassword, "other-secret");
 });
 
 test("an unsaved connection keeps its password out of local storage", async () => {
@@ -98,6 +118,7 @@ test("cleanup removes SOCKS5 profiles and disconnects an active SOCKS5 proxy", a
         "http-profile": "http-secret",
       },
       lastProxyError: "old error",
+      lastError: "old error",
     },
     { sessionConnected: true, sessionPassword: "secret" },
   );
@@ -115,7 +136,8 @@ test("cleanup removes SOCKS5 profiles and disconnects an active SOCKS5 proxy", a
     "http-profile": "http-secret",
   });
   assert.equal(chrome.storage.local.data.parsedProxy, undefined);
-  assert.equal(chrome.storage.local.data.lastProxyError, "");
+  assert.equal(chrome.storage.local.data.lastError, "");
+  assert.equal(chrome.storage.local.data.lastProxyError, undefined);
   assert.deepEqual(plain(chrome.storage.session.data), {});
   assert.deepEqual(plain(result), { removedActiveProxy: true });
 });

@@ -59,6 +59,8 @@
     let confirmationButton = null;
     let confirmationTimeoutId = null;
     let statusRequestId = 0;
+    let busy = false;
+    let lastCheck = null;
 
     function resetConfirmation() {
       if (confirmationTimeoutId !== null) {
@@ -91,6 +93,7 @@
     }
 
     function setBusy(isBusy) {
+      busy = isBusy;
       proxyToggle.disabled = isBusy || !disclaimerAccepted;
       saveProfileButton.disabled = isBusy;
       deleteProfileButton.disabled = isBusy;
@@ -119,9 +122,14 @@
       const state = response.state || {};
       const sessionConnected = Boolean(response.sessionConnected);
       const connected = response.status === "connected" || Boolean(state.active && sessionConnected);
-      const testResult = response.testResult;
-
       proxyToggle.checked = connected;
+
+      if (!connected) {
+        lastCheck = null;
+      } else if (response.testResult) {
+        lastCheck = response.testResult;
+      }
+      const testResult = lastCheck;
 
       if (connected) {
         const label = proxyLabel(state);
@@ -131,8 +139,6 @@
           setStatusLine("on", `Working · ${Math.round(testResult.latencyMs)} ms`);
         } else if (testResult && !testResult.ok) {
           setStatusLine("warn", sanitizeErrorMessage(testResult.message));
-        } else if (state.lastProxyError) {
-          setStatusLine("warn", sanitizeErrorMessage(state.lastProxyError));
         } else {
           setStatusLine("on", label ? `Connected · ${label}` : "Connected");
         }
@@ -192,7 +198,13 @@
 
       profileSelect.value = profiles.some((profile) => profile.id === selectedProfileId) ? selectedProfileId : "";
       profileRow.hidden = profiles.length === 0;
+      updateProfileControls();
+    }
+
+    // With a profile selected the button overwrites it; "Unsaved proxy" creates a new one.
+    function updateProfileControls() {
       deleteProfileButton.hidden = !profileSelect.value;
+      saveProfileButton.textContent = profileSelect.value ? "Update profile" : "Save as profile";
     }
 
     function loadSavedForm(response) {
@@ -246,6 +258,7 @@
       }
 
       statusRequestId += 1;
+      lastCheck = null;
       setBusy(true);
       setStatusLine("testing", "Connecting…");
       try {
@@ -254,8 +267,9 @@
           password: parsed.password,
           profileId: profileSelect.value || "",
         });
-        selectedPasswordValue = parsed.password || "";
-        fillInputFromProfile(parsed.profile);
+        // Reloading the form keeps the dropdown truthful: a proxy that is not a saved profile
+        // is reported as "Unsaved proxy".
+        loadSavedForm(connectResponse);
         renderStatus(connectResponse);
       } catch (error) {
         proxyToggle.checked = false;
@@ -265,12 +279,11 @@
       } finally {
         setBusy(false);
       }
-
-      await runConnectionCheck();
     }
 
     async function disconnect() {
       statusRequestId += 1;
+      lastCheck = null;
       setBusy(true);
       try {
         const response = await sendCommand("disconnect");
@@ -372,8 +385,12 @@
         return;
       }
 
-      await sendCommand("acceptDisclaimer");
-      showMainForm();
+      try {
+        await sendCommand("acceptDisclaimer");
+        showMainForm();
+      } catch (error) {
+        setErrorMessage(error.message);
+      }
     });
 
     function handleToggleChange() {
@@ -415,7 +432,7 @@
 
     profileSelect.addEventListener("change", async () => {
       const profile = selectedProfile();
-      deleteProfileButton.hidden = !profileSelect.value;
+      updateProfileControls();
       try {
         const response = await sendCommand("selectProfile", {
           profileId: profileSelect.value,
@@ -430,15 +447,19 @@
       }
     });
 
-    function refreshStatus() {
+    // One loader for the first render and for storage-change refreshes.
+    function loadStatus({ initial }) {
       sendCommand("getStatus")
         .then((response) => {
-          const state = response.state || {};
-          if (!state.disclaimerAccepted) {
+          if (!(response.state || {}).disclaimerAccepted) {
             showDisclaimer();
             return;
           }
 
+          if (initial) {
+            showMainForm();
+            loadSavedForm(response);
+          }
           renderStatus(response);
         })
         .catch((error) => {
@@ -446,34 +467,18 @@
         });
     }
 
-    sendCommand("getStatus")
-      .then((response) => {
-        const state = response.state || {};
-        if (!state.disclaimerAccepted) {
-          showDisclaimer();
-          return;
-        }
-
-        showMainForm();
-        loadSavedForm(response);
-        renderStatus(response);
-      })
-      .catch((error) => {
-        setErrorMessage(error.message);
-      });
+    loadStatus({ initial: true });
 
     chrome.storage.onChanged.addListener((changes, areaName) => {
-      if (areaName === "session" && changes.sessionConnected) {
-        refreshStatus();
+      // A command started from this popup renders its own final state.
+      if (busy) {
         return;
       }
 
-      if (areaName !== "local") {
-        return;
-      }
-
-      if (changes.lastError || changes.lastProxyError || changes.active) {
-        refreshStatus();
+      const sessionChanged = areaName === "session" && changes.sessionConnected;
+      const localChanged = areaName === "local" && (changes.lastError || changes.active);
+      if (sessionChanged || localChanged) {
+        loadStatus({ initial: false });
       }
     });
   }

@@ -24,9 +24,10 @@
     LOCAL_PASSWORD_KEY,
     "parsedProxy",
     "lastError",
-    "lastProxyError",
   ];
+  // Keys written by older versions. They are dropped on every connect and on forget-all.
   const LEGACY_SECRET_KEYS = [
+    "lastProxyError",
     "proxyUrl",
     "proxyAuth",
     "encryptionKey",
@@ -175,17 +176,20 @@
     );
   }
 
+  // A connection is tied to a saved profile only when the connected proxy really is that
+  // profile. Connecting to something else must never overwrite the profile's password.
   async function resolveConnectionProfileId(profile, profileId) {
-    const requestedProfileId = String(profileId || "");
-    if (requestedProfileId) {
-      return requestedProfileId;
-    }
-
     const state = await getLocal([PROFILES_KEY, SELECTED_PROFILE_ID_KEY]);
     const profiles = Array.isArray(state[PROFILES_KEY]) ? state[PROFILES_KEY] : [];
-    const selectedProfile = profiles.find((item) => item.id === state[SELECTED_PROFILE_ID_KEY]);
 
-    return selectedProfile && profilesMatch(selectedProfile, profile) ? selectedProfile.id : "";
+    for (const candidateId of [String(profileId || ""), String(state[SELECTED_PROFILE_ID_KEY] || "")]) {
+      const candidate = candidateId && profiles.find((item) => item.id === candidateId);
+      if (candidate && profilesMatch(candidate, profile)) {
+        return candidate.id;
+      }
+    }
+
+    return "";
   }
 
   async function migrateLegacySavedPassword() {
@@ -306,7 +310,6 @@
         active: false,
         [ACTIVE_PROFILE_ID_KEY]: "",
         lastError: "",
-        lastProxyError: "",
       });
       keysToRemove.push(ACTIVE_PROXY_KEY, LOCAL_PASSWORD_KEY, "parsedProxy");
     } else if (
@@ -457,12 +460,9 @@
       [ACTIVE_PROFILE_ID_KEY]: resolvedProfileId,
       parsedProxy,
       lastError: "",
-      lastProxyError: "",
+      // An unsaved proxy must not leave an unrelated saved profile selected in the popup.
+      [SELECTED_PROFILE_ID_KEY]: resolvedProfileId,
     };
-
-    if (resolvedProfileId) {
-      localPayload[SELECTED_PROFILE_ID_KEY] = resolvedProfileId;
-    }
 
     if (resolvedProfileId) {
       await setProfilePassword(resolvedProfileId, password);
@@ -518,7 +518,6 @@
     await setLocal({
       active: false,
       lastError: "",
-      lastProxyError: "",
     });
 
     // The saved password stays so toggling back on (or the keyboard shortcut)
@@ -582,6 +581,7 @@
     ACTIVE_PROFILE_ID_KEY,
     ACTIVE_PROXY_KEY,
     buildProxyAuth,
+    profilesMatch,
     getProfiles,
     getProfilePasswords,
     getProfilePassword,

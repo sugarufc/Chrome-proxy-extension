@@ -198,7 +198,16 @@ test("describeProxyError replaces known Chrome proxy errors with plain language"
   assert.equal(describeProxyError("net::ERR_NAME_NOT_RESOLVED"), "Proxy address not found. Check the host for typos.");
   assert.equal(describeProxyError("net::ERR_TIMED_OUT"), "The proxy is not responding.");
   assert.doesNotMatch(describeProxyError("net::ERR_PROXY_CONNECTION_FAILED"), /net::/);
-  assert.equal(describeProxyError("net::ERR_UNRECOGNIZED"), "net::ERR_UNRECOGNIZED");
+  assert.equal(
+    describeProxyError("net::ERR_CONNECTION_REFUSED"),
+    "The proxy refused the connection. Check the address and port.",
+  );
+  assert.equal(
+    describeProxyError("net::ERR_PROXY_CERTIFICATE_INVALID"),
+    "The proxy's security certificate is not valid.",
+  );
+  assert.equal(describeProxyError("net::ERR_UNRECOGNIZED"), "Connection failed (ERR_UNRECOGNIZED).");
+  assert.equal(describeProxyError("Something odd happened"), "Something odd happened");
   assert.equal(describeProxyError(""), "Proxy connection error");
 });
 

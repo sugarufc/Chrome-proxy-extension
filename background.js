@@ -3,12 +3,16 @@
 importScripts("shared.js", "storage-manager.js");
 
 const AUTH_RETRY_LIMIT = 2;
+const AUTH_FAILURE_MESSAGE = "Proxy authentication failed. Proxy disconnected.";
 const AUTH_ATTEMPT_MAX_ENTRIES = 200;
 const AUTH_ATTEMPT_TTL_MS = 5 * 60 * 1000;
 const TEST_CONNECTION_URL = "https://www.gstatic.com/generate_204";
 const TEST_CONNECTION_TIMEOUT_MS = 10_000;
 const authAttemptsByRequest = new Map();
+// Error codes that only mean "we cancelled the request ourselves"; they say nothing about the proxy.
+const IGNORED_REQUEST_ERRORS = /ERR_(?:BLOCKED_BY_CLIENT|ABORTED)/i;
 let latestProxyError = { message: "", timestamp: 0 };
+let commandQueue = Promise.resolve();
 const {
   buildProfileFromFields,
   validatePasswordForProfile,
@@ -18,43 +22,35 @@ const {
   describeProxyError,
 } = ProxyShared;
 
-function proxySettingsSet(config) {
+// State-changing commands (popup, shortcut, startup restore) run one at a time so that a
+// fast toggle or a shortcut press during a connect can never interleave storage and proxy writes.
+function runExclusive(task) {
+  const result = commandQueue.then(task);
+  commandQueue = result.catch(() => {});
+  return result;
+}
+
+function proxySettings(method, details) {
   return new Promise((resolve, reject) => {
-    chrome.proxy.settings.set({ value: config, scope: "regular" }, () => {
+    chrome.proxy.settings[method](details, (result) => {
       const runtimeError = chrome.runtime.lastError;
       if (runtimeError) {
         reject(new Error(runtimeError.message));
         return;
       }
-      resolve();
+      resolve(result);
     });
   });
 }
 
-function proxySettingsGet() {
-  return new Promise((resolve, reject) => {
-    chrome.proxy.settings.get({}, (details) => {
-      const runtimeError = chrome.runtime.lastError;
-      if (runtimeError) {
-        reject(new Error(runtimeError.message));
-        return;
-      }
-      resolve(details || {});
-    });
-  });
+const proxySettingsSet = (config) => proxySettings("set", { value: config, scope: "regular" });
+const proxySettingsClear = () => proxySettings("clear", { scope: "regular" });
+async function proxySettingsGet() {
+  return (await proxySettings("get", {})) || {};
 }
 
-function proxySettingsClear() {
-  return new Promise((resolve, reject) => {
-    chrome.proxy.settings.clear({ scope: "regular" }, () => {
-      const runtimeError = chrome.runtime.lastError;
-      if (runtimeError) {
-        reject(new Error(runtimeError.message));
-        return;
-      }
-      resolve();
-    });
-  });
+function recordProxyError(message) {
+  latestProxyError = { message: describeProxyError(message), timestamp: Date.now() };
 }
 
 function setActionIcon(active) {
@@ -70,14 +66,6 @@ function setActionIcon(active) {
   });
 }
 
-async function markFatalError(message) {
-  await ProxyStorage.setLocal({ lastError: sanitizeErrorMessage(message) });
-}
-
-async function markProxyWarning(message) {
-  await ProxyStorage.setLocal({ lastProxyError: sanitizeErrorMessage(message) });
-}
-
 async function disconnectAfterAuthFailure() {
   authAttemptsByRequest.clear();
   try {
@@ -86,31 +74,20 @@ async function disconnectAfterAuthFailure() {
     // Ignore cleanup errors after auth failure.
   }
   await ProxyStorage.setDisconnected();
+  await ProxyStorage.setLocal({ lastError: AUTH_FAILURE_MESSAGE });
   setActionIcon(false);
 }
 
+// Chrome may report the resolved proxy IP as the challenger host even when the profile stores
+// a hostname, so only the port is compared. This extension configures exactly one proxy and
+// details.isProxy already excludes website logins.
 function isCurrentProxyChallenge(details, proxyAuth) {
-  if (details.isProxy !== true || !details.challenger || !proxyAuth) {
-    return false;
-  }
-
-  const challengerPort = Number(details.challenger.port);
-  const proxyPort = Number(proxyAuth.port);
-  if (challengerPort !== proxyPort) {
-    return false;
-  }
-
-  const challengerHost = String(details.challenger.host || "").toLowerCase();
-  const proxyHost = String(proxyAuth.host || "").toLowerCase();
-  if (challengerHost === proxyHost) {
-    return true;
-  }
-
-  // Chrome may report the resolved proxy IP here even when the profile stores a hostname.
-  // This extension configures exactly one active singleProxy, so details.isProxy + matching
-  // port is the narrow fallback. Trade-off: this intentionally trusts the current single
-  // proxy config over exact DNS-name equality.
-  return true;
+  return (
+    details.isProxy === true &&
+    Boolean(details.challenger) &&
+    Boolean(proxyAuth) &&
+    Number(details.challenger.port) === Number(proxyAuth.port)
+  );
 }
 
 function pruneAuthAttempts(now = Date.now()) {
@@ -126,65 +103,85 @@ function pruneAuthAttempts(now = Date.now()) {
   }
 }
 
-function getAuthAttemptCount(requestId) {
-  const attempt = authAttemptsByRequest.get(requestId);
-  return attempt ? attempt.count : 0;
-}
-
 function recordAuthAttempt(requestId, count, now) {
   authAttemptsByRequest.delete(requestId);
-  authAttemptsByRequest.set(requestId, {
-    count,
-    updatedAt: now,
-  });
+  authAttemptsByRequest.set(requestId, { count, updatedAt: now });
   pruneAuthAttempts(now);
 }
 
-function handleAuthRequired(details, asyncCallback) {
-  const now = Date.now();
+// After a browser start Chrome can send proxy requests before onStartup has restored the
+// session. Restoring it here keeps the first requests from showing Chrome's sign-in dialog.
+async function getAuthStateWithRestore() {
+  const auth = await ProxyStorage.getAuthState();
+  if (auth.sessionConnected) {
+    return auth;
+  }
+
+  const state = await ProxyStorage.getFullState();
+  const connectedProfile = state.activeProxy || state.proxyProfile;
+  if (!state.active || !connectedProfile) {
+    return auth;
+  }
+
+  const password = await ProxyStorage.getProfilePassword(state.activeProfileId);
+  if (connectedProfile.username && !password) {
+    return auth;
+  }
+
+  await ProxyStorage.restoreSession(password);
+  return ProxyStorage.getAuthState();
+}
+
+async function resolveAuthResponse(details) {
   // Avoid global onCompleted/onErrorOccurred listeners on <all_urls>. Auth request state
   // is bounded here instead: stale entries expire by TTL, and the Map keeps only an LRU
   // window large enough for concurrent proxy auth challenges.
+  const now = Date.now();
   pruneAuthAttempts(now);
 
-  ProxyStorage.getAuthState()
-    .then(async ({ active, proxyAuth }) => {
-      if (!active || details.isProxy !== true || !isCurrentProxyChallenge(details, proxyAuth)) {
-        authAttemptsByRequest.delete(details.requestId);
-        asyncCallback({});
-        return;
-      }
+  const { active, proxyAuth } = await getAuthStateWithRestore();
+  if (!active || !isCurrentProxyChallenge(details, proxyAuth)) {
+    authAttemptsByRequest.delete(details.requestId);
+    return {};
+  }
 
-      const attempts = getAuthAttemptCount(details.requestId);
-      if (attempts >= AUTH_RETRY_LIMIT) {
-        authAttemptsByRequest.delete(details.requestId);
-        await disconnectAfterAuthFailure();
-        await markFatalError("Proxy authentication failed. Proxy disconnected.");
-        asyncCallback({ cancel: true });
-        return;
-      }
+  const attempt = authAttemptsByRequest.get(details.requestId);
+  const attempts = attempt ? attempt.count : 0;
+  if (attempts >= AUTH_RETRY_LIMIT) {
+    authAttemptsByRequest.delete(details.requestId);
+    await disconnectAfterAuthFailure();
+    return { cancel: true };
+  }
 
-      recordAuthAttempt(details.requestId, attempts + 1, now);
-      asyncCallback({
-        authCredentials: {
-          username: proxyAuth.username,
-          password: proxyAuth.password,
-        },
-      });
-    })
+  recordAuthAttempt(details.requestId, attempts + 1, now);
+  return { authCredentials: { username: proxyAuth.username, password: proxyAuth.password } };
+}
+
+function handleAuthRequired(details, asyncCallback) {
+  resolveAuthResponse(details)
     .catch(async () => {
-      await disconnectAfterAuthFailure();
-      await markFatalError("Proxy authentication failed. Proxy disconnected.");
-      asyncCallback({ cancel: true });
-    });
+      try {
+        await disconnectAfterAuthFailure();
+      } catch (_error) {
+        // The request is cancelled below regardless.
+      }
+      return { cancel: true };
+    })
+    .then(asyncCallback);
 }
 
 async function getStatusPayload(options = {}) {
   const state = await ProxyStorage.getFullState();
   const sessionConnected = await ProxyStorage.isSessionConnected();
-  const selectedPassword = state.selectedProfileId
-    ? await ProxyStorage.getProfilePassword(state.selectedProfileId)
-    : "";
+  let selectedPassword = "";
+
+  if (state.selectedProfileId) {
+    selectedPassword = await ProxyStorage.getProfilePassword(state.selectedProfileId);
+  } else if (state.active && sessionConnected && ProxyStorage.profilesMatch(state.activeProxy, state.proxyProfile)) {
+    // Connected to an unsaved proxy: its password exists only in the session, and the popup
+    // needs it to show (and later reuse) the proxy that is actually running.
+    selectedPassword = await ProxyStorage.resolveSessionPassword();
+  }
 
   // The popup receives only the selected profile password through the dedicated
   // field below; keep all secrets out of the general state object.
@@ -201,10 +198,27 @@ async function getStatusPayload(options = {}) {
 }
 
 async function getCurrentStatus() {
-  const state = await ProxyStorage.getFullState();
-  const sessionConnected = await ProxyStorage.isSessionConnected();
-  setActionIcon(Boolean(state.active && sessionConnected));
-  return getStatusPayload();
+  const payload = await getStatusPayload();
+  setActionIcon(Boolean(payload.state.active && payload.sessionConnected));
+  return payload;
+}
+
+// The most specific explanation for a failed check: an auth failure that just disconnected the
+// proxy, then the net error Chrome reported for the check request, then a generic message.
+async function explainConnectionFailure(error, startedAt) {
+  const { active, lastError } = await ProxyStorage.getLocal(["active", "lastError"]);
+  if (!active && lastError) {
+    return lastError;
+  }
+  if (latestProxyError.timestamp >= startedAt && latestProxyError.message) {
+    return latestProxyError.message;
+  }
+
+  const raw = error && error.message ? error.message : "";
+  if ((error && error.name === "AbortError") || /failed to fetch/i.test(raw)) {
+    return "The proxy is not responding.";
+  }
+  return sanitizeErrorMessage(raw || "Connection check failed.");
 }
 
 async function runConnectionTest() {
@@ -224,14 +238,7 @@ async function runConnectionTest() {
 
     return { ok: true, status: response.status, latencyMs: Date.now() - startedAt };
   } catch (error) {
-    const raw = error && error.message ? error.message : "";
-    if (latestProxyError.timestamp >= startedAt && latestProxyError.message) {
-      return { ok: false, message: latestProxyError.message };
-    }
-    if ((error && error.name === "AbortError") || /failed to fetch/i.test(raw)) {
-      return { ok: false, message: "The proxy is not responding." };
-    }
-    return { ok: false, message: sanitizeErrorMessage(raw || "Connection check failed.") };
+    return { ok: false, message: await explainConnectionFailure(error, startedAt) };
   } finally {
     clearTimeout(timeoutId);
   }
@@ -315,7 +322,9 @@ async function selectProfile(message) {
 }
 
 async function testConnection() {
-  const testResult = await runConnectionTest();
+  // A check while the proxy is off would only measure the direct connection.
+  const { active } = await ProxyStorage.getAuthState();
+  const testResult = active ? await runConnectionTest() : { ok: false, message: "Turn the proxy on to run the check." };
 
   return {
     ...(await getStatusPayload()),
@@ -348,39 +357,64 @@ async function runRuntimeCommand(message) {
   }
 }
 
-function shouldPersistCommandError(command) {
-  return command === "connect" || command === "disconnect" || command === "forgetAll";
+const EXCLUSIVE_COMMANDS = new Set([
+  "connect",
+  "disconnect",
+  "forgetAll",
+  "acceptDisclaimer",
+  "saveProfile",
+  "deleteProfile",
+  "selectProfile",
+]);
+
+// Failures of these commands are stored so the popup can show why the proxy is off.
+const PERSISTED_ERROR_COMMANDS = new Set(["connect", "disconnect", "forgetAll"]);
+
+async function persistCommandError(command, errorMessage) {
+  if (command === "connect") {
+    try {
+      await proxySettingsClear();
+    } catch (_clearError) {
+      // Preserve the original connection error.
+    }
+  }
+
+  await ProxyStorage.setLocal({
+    lastError: errorMessage,
+    ...(command === "connect" ? { active: false } : {}),
+  });
+
+  if (command === "connect") {
+    setActionIcon(false);
+  }
+}
+
+// Never rejects: every outcome becomes a response object for the popup.
+async function executeCommand(message) {
+  const command = message && message.command;
+
+  try {
+    return { ok: true, ...(await runRuntimeCommand(message)) };
+  } catch (error) {
+    const errorMessage = sanitizeErrorMessage(error && error.message ? error.message : "Proxy command failed.");
+
+    if (PERSISTED_ERROR_COMMANDS.has(command)) {
+      try {
+        await persistCommandError(command, errorMessage);
+      } catch (_persistError) {
+        // The response below still reports the original error.
+      }
+    }
+
+    return { ok: false, error: errorMessage };
+  }
 }
 
 function handleRuntimeMessage(message, _sender, sendResponse) {
-  runRuntimeCommand(message)
-    .then((payload) => {
-      sendResponse({ ok: true, ...payload });
-    })
-    .catch(async (error) => {
-      const command = message && message.command;
-      const errorMessage = sanitizeErrorMessage(error && error.message ? error.message : "Proxy command failed.");
+  const run = () => executeCommand(message);
+  const result = EXCLUSIVE_COMMANDS.has(message && message.command) ? runExclusive(run) : run();
 
-      if (shouldPersistCommandError(command)) {
-        if (command === "connect") {
-          try {
-            await proxySettingsClear();
-          } catch (_clearError) {
-            // Preserve the original connection error.
-          }
-        }
-        await ProxyStorage.setLocal({
-          lastError: errorMessage,
-          ...(command === "connect" ? { active: false } : {}),
-        });
-        if (command === "connect") {
-          setActionIcon(false);
-        }
-      }
-
-      sendResponse({ ok: false, error: errorMessage });
-    });
-
+  result.then(sendResponse);
   return true;
 }
 
@@ -388,7 +422,7 @@ async function deactivateProxy(errorMessage) {
   const sanitizedError = errorMessage ? sanitizeErrorMessage(errorMessage) : "";
   await ProxyStorage.setLocal({
     active: false,
-    ...(sanitizedError ? { lastError: sanitizedError } : { lastProxyError: "" }),
+    ...(sanitizedError ? { lastError: sanitizedError } : {}),
   });
   setActionIcon(false);
   if (sanitizedError) {
@@ -462,34 +496,45 @@ async function toggleProxyFromShortcut() {
   }
 }
 
-chrome.runtime.onInstalled.addListener(async () => {
-  await ProxyStorage.configureTrustedStorageAccess();
-  const { removedActiveProxy } = await ProxyStorage.migrateStorage();
-  if (removedActiveProxy) {
-    await proxySettingsClear();
-  }
-  await restoreProxyForCurrentSession();
+chrome.runtime.onInstalled.addListener(() =>
+  runExclusive(async () => {
+    await ProxyStorage.configureTrustedStorageAccess();
+    const { removedActiveProxy } = await ProxyStorage.migrateStorage();
+    if (removedActiveProxy) {
+      await proxySettingsClear();
+    }
+    await restoreProxyForCurrentSession();
+  }),
+);
+
+chrome.runtime.onStartup.addListener(() =>
+  runExclusive(async () => {
+    // An error from the previous browser session is stale; the restore below may set a new one.
+    await ProxyStorage.setLocal({ lastError: "" });
+    await restoreProxyForCurrentSession();
+  }),
+);
+
+// PAC-script errors only. Failures of a fixed proxy arrive through onErrorOccurred below.
+chrome.proxy.onProxyError.addListener((details) => {
+  recordProxyError(details && details.error ? details.error : "Proxy connection error");
 });
 
-chrome.runtime.onStartup.addListener(async () => {
-  await restoreProxyForCurrentSession();
-});
-
-chrome.proxy.onProxyError.addListener(async (details) => {
-  const message = details && details.error ? details.error : "Proxy connection error";
-  const describedMessage = describeProxyError(message);
-  latestProxyError = { message: describedMessage, timestamp: Date.now() };
-  const { active } = await ProxyStorage.getAuthState();
-  if (active) {
-    await markProxyWarning(describedMessage);
-  }
-});
+// Scoped to the connection-check URL so no request on regular pages is observed.
+chrome.webRequest.onErrorOccurred.addListener(
+  (details) => {
+    if (details && details.error && !IGNORED_REQUEST_ERRORS.test(details.error)) {
+      recordProxyError(details.error);
+    }
+  },
+  { urls: [TEST_CONNECTION_URL] },
+);
 
 chrome.commands.onCommand.addListener((command) => {
   if (command !== "toggle-proxy") {
     return undefined;
   }
-  return toggleProxyFromShortcut();
+  return runExclusive(toggleProxyFromShortcut);
 });
 
 chrome.runtime.onMessage.addListener(handleRuntimeMessage);

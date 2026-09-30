@@ -191,8 +191,11 @@
 
   const PROXY_ERROR_HINTS = [
     [/ERR_(?:PROXY_CONNECTION|TUNNEL_CONNECTION)_FAILED/i, "Can't reach the proxy server. Check the address and port."],
+    [/ERR_CONNECTION_REFUSED/i, "The proxy refused the connection. Check the address and port."],
+    [/ERR_CONNECTION_(?:RESET|CLOSED)/i, "The proxy closed the connection."],
     [/ERR_NAME_NOT_RESOLVED/i, "Proxy address not found. Check the host for typos."],
     [/ERR_PROXY_AUTH_UNSUPPORTED/i, "The proxy uses a sign-in method Chrome does not support."],
+    [/ERR_PROXY_CERTIFICATE_INVALID/i, "The proxy's security certificate is not valid."],
     [/ERR_(?:CONNECTION_)?TIMED_OUT/i, "The proxy is not responding."],
     [/ERR_INTERNET_DISCONNECTED/i, "No internet connection."],
   ];
@@ -207,7 +210,8 @@
       }
     }
 
-    return text;
+    const netError = text.match(/net::(ERR_[A-Z0-9_]+)/);
+    return netError ? `Connection failed (${netError[1]}).` : text;
   }
 
   function buildProxyConfig(profile) {
