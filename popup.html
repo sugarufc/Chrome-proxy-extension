@@ -28,7 +28,7 @@
           with applicable laws, website terms, and your proxy provider's rules.
         </p>
         <p>
-          Proxy settings and the password are stored locally in this Chrome profile so the proxy can reconnect after a
+          The proxy address and password are stored locally in this Chrome profile so the proxy can reconnect after a
           browser restart. Do not use on shared or untrusted devices — <strong>Forget saved data</strong> removes
           everything.
         </p>
@@ -36,19 +36,13 @@
           <input id="disclaimerCheckbox" type="checkbox" />
           <span>I understand</span>
         </label>
-        <button id="acceptDisclaimerButton" class="button button-primary" type="button" disabled>Continue</button>
+        <button id="acceptButton" class="button button-primary" type="button" disabled>Continue</button>
       </section>
 
       <section id="mainSection" class="form" hidden>
-        <button id="statusLine" class="status-line" type="button" title="Click to test the connection">
-          <span id="statusDot" class="dot dot-off" aria-hidden="true"></span>
+        <div class="status-line">
+          <span id="statusDot" class="dot" aria-hidden="true"></span>
           <span id="statusText">Off</span>
-        </button>
-
-        <div class="field" id="profileRow" hidden>
-          <label for="profileSelect">Profile</label>
-          <select id="profileSelect"></select>
-          <input id="renameInput" type="text" maxlength="80" spellcheck="false" autocomplete="off" hidden />
         </div>
 
         <div class="field">
@@ -68,22 +62,8 @@
 
         <p id="errorMessage" class="error-message" role="alert" hidden></p>
 
-        <div class="options">
-          <label class="checkbox-row">
-            <input id="blockOnFailureCheckbox" type="checkbox" />
-            <span>Block traffic if the proxy login fails</span>
-          </label>
-          <label class="checkbox-row">
-            <input id="webRtcCheckbox" type="checkbox" />
-            <span>Block WebRTC IP leaks (may break video calls)</span>
-          </label>
-        </div>
-
         <div class="footer-links">
-          <button id="saveProfileButton" class="link-button" type="button">Save as profile</button>
-          <button id="renameProfileButton" class="link-button" type="button" hidden>Rename</button>
-          <button id="deleteProfileButton" class="link-button" type="button" hidden>Delete profile</button>
-          <button id="forgetButton" class="link-button link-danger" type="button">Forget saved data</button>
+          <button id="forgetButton" class="link-button" type="button">Forget saved data</button>
         </div>
       </section>
       <p id="versionLabel" class="version-label" aria-label="Extension version"></p>

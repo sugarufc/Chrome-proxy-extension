@@ -8,78 +8,37 @@ function readRuntimeFile(fileName) {
   return fs.readFileSync(path.join(rootDir, fileName), "utf8");
 }
 
-function createEventMock() {
+function createEvent() {
   const listeners = [];
-
-  return {
-    listeners,
-    addListener(listener, filter, extraInfoSpec) {
-      listeners.push({ listener, filter, extraInfoSpec });
-    },
-  };
+  return { listeners, addListener: (listener, filter, extra) => listeners.push({ listener, filter, extra }) };
 }
 
-function createStorageArea(initial = {}, areaName = "storage", operationLog = []) {
+// Promise-based storage area like chrome.storage.* in Manifest V3.
+function createStorageArea(initial = {}) {
   const data = { ...initial };
-
-  function select(keys) {
-    if (keys == null) {
-      return { ...data };
-    }
-
-    if (Array.isArray(keys)) {
-      return keys.reduce((result, key) => {
-        if (Object.prototype.hasOwnProperty.call(data, key)) {
-          result[key] = data[key];
-        }
-        return result;
-      }, {});
-    }
-
-    if (typeof keys === "string") {
-      return Object.prototype.hasOwnProperty.call(data, keys) ? { [keys]: data[keys] } : {};
-    }
-
-    return Object.keys(keys).reduce((result, key) => {
-      result[key] = Object.prototype.hasOwnProperty.call(data, key) ? data[key] : keys[key];
-      return result;
-    }, {});
-  }
+  const keysOf = (keys) => (keys == null ? Object.keys(data) : [].concat(keys));
 
   return {
     data,
-    getCalls: [],
-    setCalls: [],
-    removeCalls: [],
-    clearCalls: 0,
-    get(keys, callback) {
-      this.getCalls.push(keys);
-      callback(select(keys));
+    async get(keys) {
+      return Object.fromEntries(
+        keysOf(keys)
+          .filter((key) => key in data)
+          .map((key) => [key, data[key]]),
+      );
     },
-    set(values, callback = () => {}) {
-      this.setCalls.push(values);
-      operationLog.push(`${areaName}.set`);
+    async set(values) {
       Object.assign(data, values);
-      callback();
     },
-    remove(keys, callback = () => {}) {
-      this.removeCalls.push(keys);
-      operationLog.push(`${areaName}.remove`);
-      for (const key of Array.isArray(keys) ? keys : [keys]) {
+    async remove(keys) {
+      for (const key of [].concat(keys)) {
         delete data[key];
       }
-      callback();
     },
-    clear(callback = () => {}) {
-      this.clearCalls += 1;
-      operationLog.push(`${areaName}.clear`);
+    async clear() {
       for (const key of Object.keys(data)) {
         delete data[key];
       }
-      callback();
-    },
-    setAccessLevel(_options, callback = () => {}) {
-      callback();
     },
   };
 }
@@ -87,136 +46,59 @@ function createStorageArea(initial = {}, areaName = "storage", operationLog = []
 function createChromeMock({
   local = {},
   session = {},
-  proxyLevelOfControl = "controlled_by_this_extension",
-  proxySetError = "",
-  proxyClearError = "",
-  proxyGetError = "",
-  withPrivacy = false,
+  levelOfControl = "controlled_by_this_extension",
+  setError = "",
 } = {}) {
-  const operationLog = [];
-  const chrome = {
-    operationLog,
-    action: {
-      badgeTextCalls: [],
-      badgeBackgroundColorCalls: [],
-      iconCalls: [],
-      titleCalls: [],
-      setBadgeText(value) {
-        this.badgeTextCalls.push(value);
-      },
-      setBadgeBackgroundColor(value) {
-        this.badgeBackgroundColorCalls.push(value);
-      },
-      setIcon(value) {
-        this.iconCalls.push(value);
-      },
-      setTitle(value) {
-        this.titleCalls.push(value);
-      },
-    },
-    commands: {
-      onCommand: createEventMock(),
-    },
-    runtime: {
-      lastError: null,
-      onInstalled: createEventMock(),
-      onMessage: createEventMock(),
-      onStartup: createEventMock(),
-    },
-    proxy: {
-      onProxyError: createEventMock(),
-      settings: {
-        setCalls: [],
-        clearCalls: [],
-        getCalls: [],
-        set(value, callback = () => {}) {
-          this.setCalls.push(value);
-          operationLog.push("proxy.settings.set");
-          chrome.runtime.lastError = proxySetError ? { message: proxySetError } : null;
-          callback();
-          chrome.runtime.lastError = null;
-        },
-        clear(value, callback = () => {}) {
-          this.clearCalls.push(value);
-          operationLog.push("proxy.settings.clear");
-          chrome.runtime.lastError = proxyClearError ? { message: proxyClearError } : null;
-          callback();
-          chrome.runtime.lastError = null;
-        },
-        get(value, callback = () => {}) {
-          this.getCalls.push(value);
-          operationLog.push("proxy.settings.get");
-          chrome.runtime.lastError = proxyGetError ? { message: proxyGetError } : null;
-          callback({ levelOfControl: proxyLevelOfControl });
-          chrome.runtime.lastError = null;
-        },
-      },
-    },
-    storage: {
-      local: createStorageArea(local, "storage.local", operationLog),
-      session: createStorageArea(session, "storage.session", operationLog),
-    },
-    ...(withPrivacy
-      ? {
-          privacy: {
-            network: {
-              webRTCIPHandlingPolicy: {
-                setCalls: [],
-                clearCalls: 0,
-                set(value, callback = () => {}) {
-                  this.setCalls.push(value);
-                  callback();
-                },
-                clear(_value, callback = () => {}) {
-                  this.clearCalls += 1;
-                  callback();
-                },
-              },
-            },
-          },
-        }
-      : {}),
-    webRequest: {
-      onAuthRequired: createEventMock(),
-      onCompleted: createEventMock(),
-      onErrorOccurred: createEventMock(),
-    },
+  const calls = [];
+  const settingsCall = (name, error) => (details, callback) => {
+    calls.push({ name, details });
+    chrome.runtime.lastError = error ? { message: error } : null;
+    callback(name === "get" ? { levelOfControl } : undefined);
+    chrome.runtime.lastError = null;
   };
 
+  const chrome = {
+    calls,
+    action: {
+      badge: [],
+      title: [],
+      icons: [],
+      setBadgeText: (value) => chrome.action.badge.push(value.text),
+      setBadgeBackgroundColor() {},
+      setTitle: (value) => chrome.action.title.push(value.title),
+      setIcon: (value) => chrome.action.icons.push(value.path[16]),
+    },
+    commands: { onCommand: createEvent() },
+    runtime: { lastError: null, onInstalled: createEvent(), onMessage: createEvent(), onStartup: createEvent() },
+    proxy: { settings: { set: settingsCall("set", setError), get: settingsCall("get"), clear: settingsCall("clear") } },
+    storage: { local: createStorageArea(local), session: { ...createStorageArea(session) } },
+    webRequest: { onAuthRequired: createEvent() },
+  };
   return chrome;
 }
 
-function createRuntimeContext(options = {}) {
-  const chrome = options.chrome || createChromeMock();
-  const context = {
-    AbortController,
-    chrome,
-    clearTimeout,
-    fetch: options.fetch,
-    setTimeout,
-    URL,
-  };
-
+function loadScripts(files, chrome) {
+  const context = { chrome, URL };
   vm.createContext(context);
-  vm.runInContext(readRuntimeFile("shared.js"), context, { filename: "shared.js" });
-
-  if (options.includeStorage !== false) {
-    vm.runInContext(readRuntimeFile("storage-manager.js"), context, { filename: "storage-manager.js" });
-  }
-
-  if (options.includeBackground === true) {
-    context.importScripts = (...fileNames) => {
-      for (const fileName of fileNames) {
-        vm.runInContext(readRuntimeFile(fileName), context, { filename: fileName });
-      }
-    };
-    vm.runInContext(readRuntimeFile("background.js"), context, { filename: "background.js" });
-  }
-
+  context.importScripts = (...names) => names.forEach((name) => vm.runInContext(readRuntimeFile(name), context));
+  files.forEach((name) => vm.runInContext(readRuntimeFile(name), context, { filename: name }));
   return context;
 }
 
-module.exports = {
-  createChromeMock,
-  createRuntimeContext,
-};
+// Loads background.js against a fake chrome and returns helpers to drive it.
+function loadBackground(options = {}) {
+  const chrome = createChromeMock(options);
+  const context = loadScripts(["background.js"], chrome);
+  const [{ listener: onMessage }] = chrome.runtime.onMessage.listeners;
+  const [{ listener: onAuth }] = chrome.webRequest.onAuthRequired.listeners;
+
+  return {
+    chrome,
+    context,
+    send: (message) => new Promise((resolve) => onMessage(message, {}, resolve)),
+    auth: (details) => new Promise((resolve) => onAuth(details, resolve)),
+    fire: (event) => chrome[event.split(".")[0]][event.split(".")[1]].listeners[0].listener(),
+  };
+}
+
+module.exports = { loadBackground, loadScripts, createChromeMock };

@@ -1,10 +1,10 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 
-const { createRuntimeContext } = require("./helpers/load-extension-scripts.js");
+const { createChromeMock, loadScripts } = require("./helpers/load-extension-scripts.js");
 
 function shared() {
-  return createRuntimeContext({ includeStorage: false }).ProxyShared;
+  return loadScripts(["shared.js"], createChromeMock()).ProxyShared;
 }
 
 function plain(value) {
@@ -12,7 +12,7 @@ function plain(value) {
 }
 
 test("parseProxyUrl accepts HTTP and HTTPS proxy URLs with and without credentials", () => {
-  const { parseProxyUrl } = shared();
+  const { parseProxyInput: parseProxyUrl } = shared();
 
   assert.deepEqual(plain(parseProxyUrl(" http://user:pass@example.com:8080 ")), {
     scheme: "http",
@@ -34,14 +34,14 @@ test("parseProxyUrl accepts HTTP and HTTPS proxy URLs with and without credentia
 });
 
 test("parseProxyUrl preserves explicitly specified default ports", () => {
-  const { parseProxyUrl } = shared();
+  const { parseProxyInput: parseProxyUrl } = shared();
 
   assert.equal(parseProxyUrl("https://user:pass@example.com:443").port, 443);
   assert.equal(parseProxyUrl("http://user:pass@example.com:80").port, 80);
 });
 
 test("parseProxyUrl decodes URL-encoded password characters and rejects raw reserved characters", () => {
-  const { parseProxyUrl } = shared();
+  const { parseProxyInput: parseProxyUrl } = shared();
 
   assert.equal(parseProxyUrl("http://user:pa%40ss%3Aword%2Fok%23x%3Fy@example.com:8080").password, "pa@ss:word/ok#x?y");
   assert.throws(() => parseProxyUrl("http://user:pa@ss@example.com:8080"), /URL-encode/);
@@ -49,7 +49,7 @@ test("parseProxyUrl decodes URL-encoded password characters and rejects raw rese
 });
 
 test("parseProxyUrl validates required fields and port boundaries", () => {
-  const { parseProxyUrl } = shared();
+  const { parseProxyInput: parseProxyUrl } = shared();
 
   assert.equal(parseProxyUrl("http://u:p@example.com:1").port, 1);
   assert.equal(parseProxyUrl("http://u:p@example.com:65535").port, 65535);
@@ -60,10 +60,14 @@ test("parseProxyUrl validates required fields and port boundaries", () => {
   assert.throws(() => parseProxyUrl("http://u:p@example.com:8080/path"), /must not include path/);
 });
 
-test("parseProxyInput accepts HTTP URLs, host:port, user:pass@host:port, and host:port:user:pass", () => {
+test("parseProxyInput accepts URLs, host:port, user:pass@host:port, and host:port:user:pass", () => {
   const { parseProxyInput } = shared();
 
   assert.throws(() => parseProxyInput("socks5://127.0.0.1:1080"), /only HTTP and HTTPS/);
+  assert.throws(() => parseProxyInput(""), /Paste a proxy/);
+  assert.throws(() => parseProxyInput("ftp://example.com:21"), /Unsupported proxy scheme/);
+  assert.throws(() => parseProxyInput("proxy.example.com"), /port/);
+  assert.throws(() => parseProxyInput("http://user@proxy.example.com:8080"), /username and password/);
 
   assert.deepEqual(plain(parseProxyInput(" proxy.example.com:8080 ")), {
     scheme: "http",
@@ -72,7 +76,6 @@ test("parseProxyInput accepts HTTP URLs, host:port, user:pass@host:port, and hos
     host: "proxy.example.com",
     port: 8080,
   });
-
   assert.deepEqual(plain(parseProxyInput("user:pass@proxy.example.com:8080")), {
     scheme: "http",
     username: "user",
@@ -80,7 +83,6 @@ test("parseProxyInput accepts HTTP URLs, host:port, user:pass@host:port, and hos
     host: "proxy.example.com",
     port: 8080,
   });
-
   assert.deepEqual(plain(parseProxyInput("203.0.113.10:8080:proxy-user:pa:ss")), {
     scheme: "http",
     username: "proxy-user",
@@ -88,152 +90,48 @@ test("parseProxyInput accepts HTTP URLs, host:port, user:pass@host:port, and hos
     host: "203.0.113.10",
     port: 8080,
   });
-
-  assert.throws(() => parseProxyInput(""), /required/);
-  assert.throws(() => parseProxyInput("ftp://example.com:21"), /Unsupported proxy scheme/);
-  assert.throws(() => parseProxyInput("proxy.example.com"), /port/);
 });
 
-test("formatProxyString renders the actual password and URL-encodes reserved characters", () => {
-  const { formatProxyString, PASSWORD_MASK } = shared();
-  const profile = { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" };
+test("host:port:user:pass keeps any character in the password, including @ and /", () => {
+  const { parseProxyInput } = shared();
 
-  assert.equal(PASSWORD_MASK, undefined);
-  assert.equal(formatProxyString(profile), "http://user@proxy.example.com:8080");
+  const parsed = parseProxyInput("203.0.113.10:8080:proxy-user:p@ss/w:rd#1");
+
+  assert.equal(parsed.password, "p@ss/w:rd#1");
+  assert.equal(parsed.host, "203.0.113.10");
+  assert.equal(parsed.port, 8080);
+  assert.throws(() => parseProxyInput("user:p:w@proxy.example.com:8080"), /URL-encode/);
+});
+
+test("formatProxyString writes a string that parseProxyInput reads back", () => {
+  const { formatProxyString, parseProxyInput } = shared();
+  const proxy = {
+    scheme: "https",
+    host: "proxy.example.com",
+    port: 8443,
+    username: "user",
+    password: "pa@ss:word/ok#x?y",
+  };
+
+  const text = formatProxyString(proxy);
+
+  assert.equal(text, "https://user:pa%40ss%3Aword%2Fok%23x%3Fy@proxy.example.com:8443");
+  assert.deepEqual(plain(parseProxyInput(text)), proxy);
   assert.equal(
-    formatProxyString(profile, { password: "pa@ss:word/ok#x?y" }),
-    "http://user:pa%40ss%3Aword%2Fok%23x%3Fy@proxy.example.com:8080",
+    formatProxyString({ scheme: "http", host: "proxy.example.com", port: 80, username: "" }),
+    "http://proxy.example.com:80",
   );
   assert.equal(formatProxyString(null), "");
 });
 
-test("parseProxyInput round-trips a plaintext formatProxyString value", () => {
-  const { parseProxyInput, formatProxyString } = shared();
-  const profile = { scheme: "https", host: "proxy.example.com", port: 8443, username: "user" };
+test("buildProxyConfig routes everything through one proxy except local addresses", () => {
+  const { buildProxyConfig } = shared();
 
-  const formatted = formatProxyString(profile, { password: "pa@ss:word/ok#x?y" });
-  const parsed = parseProxyInput(formatted);
-
-  assert.equal(parsed.password, "pa@ss:word/ok#x?y");
-  assert.equal(parsed.username, "user");
-  assert.equal(parsed.host, "proxy.example.com");
-});
-
-test("buildProfileFromFields normalizes valid fields and rejects invalid profile values", () => {
-  const { buildProfileFromFields } = shared();
-
-  assert.deepEqual(
-    plain(
-      buildProfileFromFields({
-        scheme: " HTTPS ",
-        host: " proxy.example.com ",
-        port: "443",
-        username: " user ",
-      }),
-    ),
-    {
-      scheme: "https",
-      host: "proxy.example.com",
-      port: 443,
-      username: "user",
-    },
-  );
-
-  assert.throws(() => buildProfileFromFields({ scheme: "ftp", host: "example.com", port: 21 }), /only HTTP and HTTPS/);
-  assert.throws(
-    () => buildProfileFromFields({ scheme: "socks5", host: "127.0.0.1", port: 1080 }),
-    /only HTTP and HTTPS/,
-  );
-  assert.throws(() => buildProfileFromFields({ scheme: "http", host: "", port: 8080 }), /host is required/);
-  assert.throws(() => buildProfileFromFields({ scheme: "http", host: "example.com", port: 0 }), /port/);
-});
-
-test("validatePasswordForProfile enforces password only when username is present", () => {
-  const { validatePasswordForProfile } = shared();
-
-  assert.doesNotThrow(() => validatePasswordForProfile({ scheme: "http", username: "" }, ""));
-  assert.doesNotThrow(() => validatePasswordForProfile({ scheme: "http", username: "user" }, "pass"));
-  assert.throws(() => validatePasswordForProfile({ scheme: "http", username: "user" }, ""), /Password is required/);
-  assert.throws(() => validatePasswordForProfile(null, "pass"), /incomplete/);
-});
-
-test("sanitizeErrorMessage redacts URLs, credentials, and auth headers", () => {
-  const { sanitizeErrorMessage } = shared();
-  const sanitized = sanitizeErrorMessage(
-    "Failed http://user:secret@example.com:8080 password=secret Proxy-Authorization: Basic abc Authorization=Bearer token",
-  );
-
-  assert.doesNotMatch(sanitized, /secret/);
-  assert.doesNotMatch(sanitized, /Basic abc/);
-  assert.doesNotMatch(sanitized, /Bearer token/);
-  assert.match(sanitized, /\[redacted\]/);
-  assert.equal(sanitizeErrorMessage("x".repeat(500)).length, 300);
-});
-
-test("sanitizeErrorMessage keeps user-facing validation messages readable", () => {
-  const { sanitizeErrorMessage } = shared();
-
-  assert.equal(
-    sanitizeErrorMessage("Password is required when username is provided."),
-    "Password is required when username is provided.",
-  );
-  assert.equal(sanitizeErrorMessage("Proxy URL is required."), "Proxy URL is required.");
-  assert.equal(
-    sanitizeErrorMessage("Invalid password encoding. URL-encode special characters."),
-    "Invalid password encoding. URL-encode special characters.",
-  );
-});
-
-test("describeProxyError replaces known Chrome proxy errors with plain language", () => {
-  const { describeProxyError } = shared();
-
-  assert.equal(
-    describeProxyError("net::ERR_PROXY_CONNECTION_FAILED"),
-    "Can't reach the proxy server. Check the address and port.",
-  );
-  assert.equal(
-    describeProxyError("net::ERR_TUNNEL_CONNECTION_FAILED"),
-    "Can't reach the proxy server. Check the address and port.",
-  );
-  assert.equal(describeProxyError("net::ERR_NAME_NOT_RESOLVED"), "Proxy address not found. Check the host for typos.");
-  assert.equal(describeProxyError("net::ERR_TIMED_OUT"), "The proxy is not responding.");
-  assert.doesNotMatch(describeProxyError("net::ERR_PROXY_CONNECTION_FAILED"), /net::/);
-  assert.equal(
-    describeProxyError("net::ERR_CONNECTION_REFUSED"),
-    "The proxy refused the connection. Check the address and port.",
-  );
-  assert.equal(
-    describeProxyError("net::ERR_PROXY_CERTIFICATE_INVALID"),
-    "The proxy's security certificate is not valid.",
-  );
-  assert.equal(describeProxyError("net::ERR_UNRECOGNIZED"), "Connection failed (ERR_UNRECOGNIZED).");
-  assert.equal(describeProxyError("Something odd happened"), "Something odd happened");
-  assert.equal(describeProxyError(""), "Proxy connection error");
-});
-
-test("buildProxyConfig and sanitizeParsedProxy shape Chrome-safe data", () => {
-  const { buildProxyConfig, sanitizeParsedProxy } = shared();
-  const profile = { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" };
-
-  assert.deepEqual(plain(buildProxyConfig(profile)), {
+  assert.deepEqual(plain(buildProxyConfig({ scheme: "http", host: "proxy.example.com", port: 8080 })), {
     mode: "fixed_servers",
     rules: {
-      singleProxy: {
-        scheme: "http",
-        host: "proxy.example.com",
-        port: 8080,
-      },
+      singleProxy: { scheme: "http", host: "proxy.example.com", port: 8080 },
       bypassList: ["localhost", "127.0.0.1", "<local>"],
     },
   });
-
-  assert.deepEqual(plain(sanitizeParsedProxy(profile, true)), {
-    scheme: "http",
-    host: "proxy.example.com",
-    port: 8080,
-    usernameExists: true,
-    passwordExists: true,
-  });
-
-  assert.equal(sanitizeParsedProxy(null, true), null);
 });

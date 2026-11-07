@@ -35,7 +35,7 @@ We do not collect:
 The extension may store the following locally in Chrome extension storage on your device:
 
 - proxy type, host, port, and username
-- proxy password in `chrome.storage.local` (and in `chrome.storage.session` while connected)
+- proxy password in `chrome.storage.local`
 - connection state and local error messages required for the extension to function
 - a disclaimer acceptance flag
 
@@ -57,14 +57,9 @@ We do not share user data with third parties.
 
 The extension does not include analytics SDKs, advertising SDKs, or remote configuration services.
 
-## Connection test
+## Network requests
 
-The extension can verify connectivity by requesting `https://www.gstatic.com/generate_204` from the background service
-worker and treating HTTP 204 as success. This optional check runs only when you click the status line in the popup;
-it is never started automatically.
-
-The request contains no proxy settings, credentials, profile names, browsing history, or any other user data, and
-nothing is sent to the developer. No connectivity checks run while the proxy is off.
+The extension makes no network requests of its own. It only tells Chrome which proxy to use.
 
 ## Remote code
 
@@ -77,7 +72,6 @@ The extension requests Chrome permissions only to:
 - apply and clear the user's proxy configuration
 - store user preferences and credentials locally
 - respond to proxy authentication challenges for the configured proxy
-- optionally (only if you turn on "Block WebRTC IP leaks" and approve the prompt) change Chrome's WebRTC IP handling policy while the proxy is on
 
 These permissions are not used to collect browsing history or monitor website activity for the developer.
 

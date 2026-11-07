@@ -164,11 +164,6 @@ h2 {
   color: #1d1d1f;
   text-align: left;
   line-height: 1.35;
-  cursor: pointer;
-}
-
-.status-line:hover {
-  background: #fafafc;
 }
 
 .dot {
@@ -179,24 +174,12 @@ h2 {
   background: #b0b0b5;
 }
 
-.dot-off {
-  background: #b0b0b5;
-}
-
 .dot-on {
   background: #34c759;
 }
 
-.dot-warn {
-  background: #f0a41a;
-}
-
 .dot-error {
   background: #e2483d;
-}
-
-.dot-testing {
-  background: #0066cc;
 }
 
 .disclaimer,
@@ -217,10 +200,6 @@ h2 {
   font-size: 11px;
 }
 
-.notice-warning {
-  color: #8a6100;
-}
-
 .field {
   display: grid;
   gap: 4px;
@@ -234,8 +213,7 @@ label {
   line-height: 1.25;
 }
 
-input,
-select {
+input {
   width: 100%;
   height: 38px;
   padding: 0 14px;
@@ -255,8 +233,7 @@ select {
   font-size: 12.5px;
 }
 
-input:focus,
-select:focus {
+input:focus {
   border-color: #0066cc;
   box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.14);
 }
@@ -284,14 +261,8 @@ select:focus {
   line-height: 1.35;
 }
 
-.options {
-  display: grid;
-  gap: 6px;
-}
-
 .footer-links {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 14px;
   margin-top: 2px;
@@ -311,16 +282,6 @@ select:focus {
 
 .link-button:hover:not(:disabled) {
   text-decoration: underline;
-}
-
-.link-button:disabled {
-  opacity: 0.6;
-  cursor: wait;
-}
-
-.link-danger {
-  color: #a21f1f;
-  margin-left: auto;
 }
 
 .version-label {

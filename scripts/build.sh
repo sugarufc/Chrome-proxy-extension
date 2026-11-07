@@ -21,7 +21,6 @@ for path in \
   manifest.json \
   background.js \
   shared.js \
-  storage-manager.js \
   popup.html \
   popup.css \
   popup.js \

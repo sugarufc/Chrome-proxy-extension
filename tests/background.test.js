@@ -1,575 +1,260 @@
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const test = require("node:test");
 
-const { createChromeMock, createRuntimeContext } = require("./helpers/load-extension-scripts.js");
+const { loadBackground } = require("./helpers/load-extension-scripts.js");
 
-const rootDir = path.resolve(__dirname, "..");
+const plain = (value) => JSON.parse(JSON.stringify(value));
+const names = (chrome) => chrome.calls.map((call) => call.name);
+const proxy = { scheme: "http", host: "proxy.example.com", port: 8080, username: "user", password: "secret" };
+const challenge = (requestId, port = 8080) => ({ requestId, isProxy: true, challenger: { host: "1.2.3.4", port } });
 
-function plain(value) {
-  return JSON.parse(JSON.stringify(value));
-}
+test("connect parses the pasted proxy, applies it and remembers it", async () => {
+  const { chrome, send } = loadBackground({ local: { disclaimerAccepted: true } });
 
-function loadBackground(local = {}, session = {}, options = {}) {
-  const chrome = createChromeMock({ local, session });
-  const context = createRuntimeContext({ chrome, includeStorage: false, includeBackground: true, ...options });
-  return { chrome, context };
-}
+  const response = await send({ command: "connect", input: "http://user:secret@proxy.example.com:8080" });
 
-function callAuthRequired(context, details) {
-  return new Promise((resolve) => {
-    context.handleAuthRequired(details, resolve);
+  assert.equal(response.ok, true);
+  assert.equal(response.status.active, true);
+  assert.equal(response.status.label, "http://proxy.example.com:8080");
+  assert.deepEqual(plain(chrome.storage.local.data.proxy), proxy);
+  assert.equal(chrome.storage.local.data.active, true);
+  assert.deepEqual(plain(chrome.calls[0].details.value.rules), {
+    singleProxy: { scheme: "http", host: "proxy.example.com", port: 8080 },
+    bypassList: ["localhost", "127.0.0.1", "<local>"],
   });
-}
-
-test("background keeps the strict directive before importScripts", () => {
-  const source = fs.readFileSync(path.join(rootDir, "background.js"), "utf8");
-  assert.equal(source.split(/\r?\n/, 1)[0], '"use strict";');
+  assert.equal(chrome.calls[0].details.scope, "regular");
+  assert.equal(chrome.action.icons.at(-1), "icons/icon16-on.png");
 });
 
-test("background observes webRequest only for proxy auth and the connection-check URL", () => {
-  const { chrome } = loadBackground();
+test("connect rejects bad input without touching Chrome settings", async () => {
+  const { chrome, send } = loadBackground();
 
-  assert.equal(chrome.webRequest.onAuthRequired.listeners.length, 1);
-  assert.equal(chrome.webRequest.onCompleted.listeners.length, 0);
-  assert.equal(chrome.webRequest.onErrorOccurred.listeners.length, 1);
-  assert.deepEqual(plain(chrome.webRequest.onErrorOccurred.listeners[0].filter), {
-    urls: ["https://www.gstatic.com/generate_204"],
-  });
+  for (const input of ["", "socks5://127.0.0.1:1080", "http://user@host:8080", "host"]) {
+    const response = await send({ command: "connect", input });
+    assert.equal(response.ok, false, input);
+  }
+
+  assert.deepEqual(chrome.calls, []);
+  assert.equal(chrome.storage.local.data.active, undefined);
 });
 
-test("proxy auth restores a lost session from saved data instead of showing Chrome's sign-in dialog", async () => {
-  const activeProxy = { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" };
-  const { chrome, context } = loadBackground({
-    active: true,
-    activeProfileId: "profile-a",
-    activeProxy,
-    proxyProfiles: [{ id: "profile-a", name: "A", ...activeProxy }],
-    profilePasswords: { "profile-a": "saved-secret" },
-  });
+test("connect turns everything off and reports the reason when Chrome refuses the settings", async () => {
+  const failing = loadBackground({ setError: "Proxy settings are unavailable." });
+  const response = await failing.send({ command: "connect", input: "proxy.example.com:8080" });
 
-  const result = await callAuthRequired(context, {
-    requestId: "early-request",
-    isProxy: true,
-    challenger: { host: "proxy.example.com", port: 8080 },
-  });
+  assert.equal(response.ok, false);
+  assert.equal(response.error, "Proxy settings are unavailable.");
+  assert.equal(failing.chrome.storage.local.data.active, false);
+  assert.equal(failing.chrome.storage.local.data.lastError, "Proxy settings are unavailable.");
+  assert.ok(names(failing.chrome).includes("clear"));
+  assert.equal(failing.chrome.action.icons.at(-1), "icons/icon16.png");
 
-  assert.deepEqual(plain(result), { authCredentials: { username: "user", password: "saved-secret" } });
-  assert.equal(chrome.storage.session.data.sessionConnected, true);
+  const other = loadBackground({ levelOfControl: "controlled_by_other_extensions" });
+  const blocked = await other.send({ command: "connect", input: "proxy.example.com:8080" });
+  assert.match(blocked.error, /Another extension or a policy/);
+  assert.equal(other.chrome.storage.local.data.active, false);
 });
 
-test("proxy auth does not restore a session for a proxy the user turned off", async () => {
-  const { context } = loadBackground({
+test("disconnect clears the proxy but keeps it saved for the next time", async () => {
+  const { chrome, send } = loadBackground({ local: { active: true, proxy } });
+
+  const response = await send({ command: "disconnect" });
+
+  assert.equal(response.status.active, false);
+  assert.equal(response.status.input, "http://user:secret@proxy.example.com:8080");
+  assert.deepEqual(names(chrome), ["clear"]);
+  assert.equal(chrome.action.icons.at(-1), "icons/icon16.png");
+});
+
+test("forget removes the proxy, the password and the accepted disclaimer", async () => {
+  const { chrome, send } = loadBackground({ local: { disclaimerAccepted: true, active: true, proxy } });
+
+  const response = await send({ command: "forget" });
+
+  assert.deepEqual(plain(chrome.storage.local.data), {});
+  assert.equal(response.status.accepted, false);
+  assert.equal(response.status.input, "");
+  assert.ok(names(chrome).includes("clear"));
+});
+
+test("status shows the saved proxy string and a stored error while off", async () => {
+  const { send } = loadBackground({ local: { disclaimerAccepted: true, proxy, lastError: "Something failed." } });
+
+  const { status } = await send({ command: "getStatus" });
+
+  assert.deepEqual(plain(status), {
+    accepted: true,
     active: false,
-    proxyProfile: { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" },
-    proxyProfiles: [],
-    profilePasswords: {},
+    label: "http://proxy.example.com:8080",
+    input: "http://user:secret@proxy.example.com:8080",
+    error: "Something failed.",
   });
-
-  const result = await callAuthRequired(context, {
-    requestId: "off-request",
-    isProxy: true,
-    challenger: { host: "proxy.example.com", port: 8080 },
-  });
-
-  assert.deepEqual(plain(result), {});
+  assert.equal((await send({ command: "nope" })).ok, false);
 });
 
-test("repeated proxy auth rejection disconnects the proxy and records why", async () => {
-  const { chrome, context } = loadBackground(
-    {
-      active: true,
-      proxyProfile: { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" },
-    },
-    { sessionConnected: true, sessionPassword: "wrong" },
-  );
-  const details = {
-    requestId: "rejected",
-    isProxy: true,
-    challenger: { host: "proxy.example.com", port: 8080 },
-  };
+test("acceptDisclaimer is remembered", async () => {
+  const { chrome, send } = loadBackground();
 
-  assert.ok((await callAuthRequired(context, details)).authCredentials);
-  assert.ok((await callAuthRequired(context, details)).authCredentials);
-  const third = await callAuthRequired(context, details);
+  const response = await send({ command: "acceptDisclaimer" });
 
-  assert.deepEqual(plain(third), { cancel: true });
-  assert.equal(chrome.storage.local.data.active, false);
-  assert.equal(chrome.storage.local.data.lastError, "Proxy authentication failed. Proxy disconnected.");
-  assert.equal(chrome.proxy.settings.clearCalls.length, 1);
-  assert.deepEqual(plain(chrome.storage.session.data), {});
+  assert.equal(response.status.accepted, true);
+  assert.equal(chrome.storage.local.data.disclaimerAccepted, true);
 });
 
-test("commands run one at a time so a quick off/on cannot interleave", async () => {
-  const chrome = createChromeMock({ local: { disclaimerAccepted: true } });
-  createRuntimeContext({ chrome, includeStorage: false, includeBackground: true });
-  const [{ listener }] = chrome.runtime.onMessage.listeners;
-  const profile = { scheme: "http", host: "proxy.example.com", port: 8080, username: "" };
+test("commands run one at a time", async () => {
+  const { chrome, send } = loadBackground();
 
-  const responses = await Promise.all(
-    [{ command: "connect", profile }, { command: "disconnect" }, { command: "connect", profile }].map(
-      (message) => new Promise((resolve) => listener(message, {}, resolve)),
-    ),
-  );
+  const responses = await Promise.all([
+    send({ command: "connect", input: "a.example.com:1" }),
+    send({ command: "disconnect" }),
+    send({ command: "connect", input: "b.example.com:2" }),
+  ]);
 
   assert.deepEqual(
     responses.map((response) => response.ok),
     [true, true, true],
   );
-  assert.deepEqual(
-    chrome.operationLog.filter((entry) => entry.startsWith("proxy.settings.") && entry !== "proxy.settings.get"),
-    ["proxy.settings.set", "proxy.settings.clear", "proxy.settings.set"],
-  );
+  assert.deepEqual(names(chrome), ["set", "get", "clear", "set", "get"]);
+  assert.equal(chrome.storage.local.data.proxy.host, "b.example.com");
   assert.equal(chrome.storage.local.data.active, true);
 });
 
-test("browser startup drops the previous session's error message", async () => {
-  const { chrome } = loadBackground({ active: false, lastError: "Proxy authentication failed. Proxy disconnected." });
+test("proxy auth answers only the configured proxy", async () => {
+  const { auth } = loadBackground({ local: { active: true, proxy } });
 
-  const [{ listener }] = chrome.runtime.onStartup.listeners;
-  await listener();
-
-  assert.equal(chrome.storage.local.data.lastError, "");
+  assert.deepEqual(plain(await auth(challenge("a"))), { authCredentials: { username: "user", password: "secret" } });
+  // A website login, another port, or a proxy without credentials never gets the password.
+  assert.deepEqual(plain(await auth({ ...challenge("b"), isProxy: false })), {});
+  assert.deepEqual(plain(await auth(challenge("c", 9090))), {});
+  assert.deepEqual(plain(await auth({ requestId: "d", isProxy: true })), {});
 });
 
-test("proxy auth challenge accepts resolved challenger IP when port matches the single active proxy", async () => {
-  const { context } = loadBackground(
-    {
-      active: true,
-      proxyProfile: {
-        scheme: "http",
-        host: "proxy.example.com",
-        port: 8080,
-        username: "user",
-      },
-    },
-    {
-      sessionConnected: true,
-      sessionPassword: "secret",
-    },
-  );
+test("proxy auth does nothing while the proxy is off or has no credentials", async () => {
+  const off = loadBackground({ local: { active: false, proxy } });
+  assert.deepEqual(plain(await off.auth(challenge("a"))), {});
 
-  const result = await callAuthRequired(context, {
-    requestId: "soft-host-match",
-    isProxy: true,
-    challenger: {
-      host: "203.0.113.10",
-      port: 8080,
-    },
-  });
-
-  assert.deepEqual(plain(result), {
-    authCredentials: {
-      username: "user",
-      password: "secret",
-    },
-  });
+  const open = loadBackground({ local: { active: true, proxy: { ...proxy, username: "", password: "" } } });
+  assert.deepEqual(plain(await open.auth(challenge("a"))), {});
 });
 
-test("proxy auth challenge rejects non-matching proxy port", async () => {
-  const { context } = loadBackground(
-    {
-      active: true,
-      proxyProfile: {
-        scheme: "http",
-        host: "proxy.example.com",
-        port: 8080,
-        username: "user",
-      },
-    },
-    {
-      sessionConnected: true,
-      sessionPassword: "secret",
-    },
-  );
+test("a rejected login turns the proxy off after two retries", async () => {
+  const { chrome, auth } = loadBackground({ local: { active: true, proxy } });
 
-  const result = await callAuthRequired(context, {
-    requestId: "wrong-port",
-    isProxy: true,
-    challenger: {
-      host: "203.0.113.10",
-      port: 9090,
-    },
-  });
-
-  assert.deepEqual(plain(result), {});
-});
-
-test("proxy auth answers for the connected proxy snapshot, not the selected form profile", async () => {
-  const { context } = loadBackground(
-    {
-      active: true,
-      proxyProfile: {
-        scheme: "http",
-        host: "other.example.com",
-        port: 9090,
-        username: "user",
-      },
-      activeProxy: {
-        scheme: "http",
-        host: "proxy.example.com",
-        port: 8080,
-        username: "user",
-      },
-    },
-    {
-      sessionConnected: true,
-      sessionPassword: "secret",
-    },
-  );
-
-  const granted = await callAuthRequired(context, {
-    requestId: "snapshot-match",
-    isProxy: true,
-    challenger: { host: "proxy.example.com", port: 8080 },
-  });
-  assert.deepEqual(plain(granted), {
-    authCredentials: {
-      username: "user",
-      password: "secret",
-    },
-  });
-
-  const rejected = await callAuthRequired(context, {
-    requestId: "form-profile-challenge",
-    isProxy: true,
-    challenger: { host: "other.example.com", port: 9090 },
-  });
-  assert.deepEqual(plain(rejected), {});
-});
-
-test("background auto-reconnects the saved proxy on browser startup", async () => {
-  const activeProxy = { scheme: "http", host: "active.example.com", port: 8080, username: "active-user" };
-  const { chrome } = loadBackground(
-    {
-      active: true,
-      activeProfileId: "profile-a",
-      selectedProfileId: "profile-b",
-      profilePasswords: {
-        "profile-a": "active-secret",
-        "profile-b": "selected-secret",
-      },
-      proxyProfiles: [
-        { id: "profile-a", name: "Active", ...activeProxy },
-        {
-          id: "profile-b",
-          name: "Selected",
-          scheme: "http",
-          host: "selected.example.com",
-          port: 9090,
-          username: "selected-user",
-        },
-      ],
-      activeProxy,
-      proxyProfile: { scheme: "http", host: "selected.example.com", port: 9090, username: "selected-user" },
-    },
-    {},
-  );
-
-  const [{ listener }] = chrome.runtime.onStartup.listeners;
-  await listener();
-
-  assert.equal(chrome.proxy.settings.setCalls.length, 1);
-  assert.equal(chrome.storage.session.data.sessionConnected, true);
-  assert.equal(chrome.storage.session.data.sessionPassword, "active-secret");
-  assert.equal(chrome.storage.local.data.active, true);
-  assert.equal(chrome.proxy.settings.setCalls[0].value.rules.singleProxy.host, "active.example.com");
-});
-
-test("background startup deactivates an auth proxy when no password is saved", async () => {
-  const { chrome } = loadBackground(
-    {
-      active: true,
-      activeProxy: { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" },
-    },
-    {},
-  );
-
-  const [{ listener }] = chrome.runtime.onStartup.listeners;
-  await listener();
+  assert.ok((await auth(challenge("r"))).authCredentials);
+  assert.ok((await auth(challenge("r"))).authCredentials);
+  assert.deepEqual(plain(await auth(challenge("r"))), { cancel: true });
 
   assert.equal(chrome.storage.local.data.active, false);
-  assert.equal(chrome.storage.session.data.sessionConnected, undefined);
-  assert.match(chrome.storage.local.data.lastError, /password/i);
+  assert.equal(chrome.storage.local.data.lastError, "Proxy authentication failed. Proxy turned off.");
+  assert.ok(names(chrome).includes("clear"));
+  // Other requests are no longer answered once the proxy is off.
+  assert.deepEqual(plain(await auth(challenge("other"))), {});
 });
 
-test("background installation migration clears Chrome settings for a removed SOCKS5 proxy", async () => {
-  const socksProfile = {
-    id: "socks-profile",
-    name: "Legacy SOCKS",
-    scheme: "socks5",
-    host: "127.0.0.1",
-    port: 1080,
-    username: "user",
-  };
-  const chrome = createChromeMock({
-    local: {
-      active: true,
-      proxyProfiles: [socksProfile],
-      selectedProfileId: "socks-profile",
-      activeProfileId: "socks-profile",
-      proxyProfile: socksProfile,
-      activeProxy: socksProfile,
-      savedPassword: "secret",
-    },
-    session: { sessionConnected: true, sessionPassword: "secret" },
-  });
-  createRuntimeContext({ chrome, includeBackground: true });
+test("many different requests never count as one rejected login", async () => {
+  const { chrome, auth } = loadBackground({ local: { active: true, proxy } });
 
-  const [{ listener }] = chrome.runtime.onInstalled.listeners;
-  await listener();
-
-  assert.equal(chrome.proxy.settings.clearCalls.length, 1);
-  assert.equal(chrome.storage.local.data.active, false);
-  assert.deepEqual(chrome.storage.local.data.proxyProfiles, []);
-  assert.equal(chrome.storage.local.data.schemaVersion, 1);
-});
-
-test("keyboard shortcut toggles the proxy using the saved settings", async () => {
-  const { chrome } = loadBackground(
-    {
-      disclaimerAccepted: true,
-      selectedProfileId: "profile-a",
-      proxyProfiles: [
-        {
-          id: "profile-a",
-          name: "Proxy",
-          scheme: "http",
-          host: "proxy.example.com",
-          port: 8080,
-          username: "user",
-        },
-      ],
-      proxyProfile: { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" },
-      profilePasswords: { "profile-a": "secret" },
-    },
-    {},
-    { fetch: async () => ({ status: 204 }) },
-  );
-
-  const [{ listener }] = chrome.commands.onCommand.listeners;
-
-  await listener("toggle-proxy");
-  assert.equal(chrome.proxy.settings.setCalls.length, 1);
-  assert.equal(chrome.storage.local.data.active, true);
-  assert.equal(chrome.storage.session.data.sessionConnected, true);
-  assert.equal(chrome.action.badgeTextCalls.at(-1).text, "");
-  assert.equal(chrome.action.titleCalls.at(-1).title, "Proxy Switcher");
-
-  await listener("toggle-proxy");
-  assert.equal(chrome.proxy.settings.clearCalls.length, 1);
-  assert.equal(chrome.storage.local.data.active, false);
-
-  await listener("unrelated-command");
-  assert.equal(chrome.proxy.settings.setCalls.length, 1);
-});
-
-test("keyboard shortcut shows a red error badge when activation fails", async () => {
-  const { chrome } = loadBackground({
-    selectedProfileId: "profile-a",
-    proxyProfiles: [
-      {
-        id: "profile-a",
-        name: "Proxy",
-        scheme: "http",
-        host: "proxy.example.com",
-        port: 8080,
-        username: "user",
-      },
-    ],
-    proxyProfile: { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" },
-  });
-  const [{ listener }] = chrome.commands.onCommand.listeners;
-
-  await listener("toggle-proxy");
-
-  assert.equal(chrome.storage.local.data.active, false);
-  assert.equal(chrome.action.badgeTextCalls.at(-1).text, "!");
-  assert.equal(chrome.action.badgeBackgroundColorCalls.at(-1).color, "#d93025");
-  assert.match(chrome.action.titleCalls.at(-1).title, /password/i);
-});
-
-test("proxy errors stay transient and are not persisted as the overall proxy status", async () => {
-  const inactive = loadBackground({ active: false });
-  const [{ listener: inactiveListener }] = inactive.chrome.proxy.onProxyError.listeners;
-
-  await inactiveListener({ error: "net::ERR_PROXY_CONNECTION_FAILED" });
-
-  assert.equal(inactive.chrome.storage.local.data.lastProxyError, undefined);
-
-  const active = loadBackground({ active: true }, { sessionConnected: true });
-  const [{ listener: activeListener }] = active.chrome.proxy.onProxyError.listeners;
-
-  await activeListener({ error: "net::ERR_PROXY_CONNECTION_FAILED" });
-
-  assert.equal(active.chrome.storage.local.data.lastProxyError, undefined);
-});
-
-test("proxy auth attempts are bounded without completed/error webRequest listeners", async () => {
-  const { context } = loadBackground(
-    {
-      active: true,
-      proxyProfile: {
-        scheme: "http",
-        host: "proxy.example.com",
-        port: 8080,
-        username: "user",
-      },
-    },
-    {
-      sessionConnected: true,
-      sessionPassword: "secret",
-    },
-  );
-
-  await callAuthRequired(context, {
-    requestId: "oldest",
-    isProxy: true,
-    challenger: { host: "proxy.example.com", port: 8080 },
-  });
-
-  for (let index = 0; index < 205; index += 1) {
-    await callAuthRequired(context, {
-      requestId: `new-${index}`,
-      isProxy: true,
-      challenger: { host: "proxy.example.com", port: 8080 },
-    });
+  for (let index = 0; index < 250; index += 1) {
+    assert.ok((await auth(challenge(`request-${index}`))).authCredentials);
   }
 
-  const secondOldestAttempt = await callAuthRequired(context, {
-    requestId: "oldest",
-    isProxy: true,
-    challenger: { host: "proxy.example.com", port: 8080 },
-  });
-  const thirdOldestAttempt = await callAuthRequired(context, {
-    requestId: "oldest",
-    isProxy: true,
-    challenger: { host: "proxy.example.com", port: 8080 },
-  });
-
-  assert.deepEqual(plain(secondOldestAttempt), {
-    authCredentials: {
-      username: "user",
-      password: "secret",
-    },
-  });
-  assert.deepEqual(plain(thirdOldestAttempt), {
-    authCredentials: {
-      username: "user",
-      password: "secret",
-    },
-  });
-});
-
-test("with block-on-failure a rejected login keeps the proxy set and stops sending credentials", async () => {
-  const { chrome, context } = loadBackground(
-    {
-      active: true,
-      blockOnFailure: true,
-      proxyProfile: { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" },
-    },
-    { sessionConnected: true, sessionPassword: "wrong" },
-  );
-  const challenge = (requestId) => ({
-    requestId,
-    isProxy: true,
-    challenger: { host: "proxy.example.com", port: 8080 },
-  });
-
-  await callAuthRequired(context, challenge("a"));
-  await callAuthRequired(context, challenge("a"));
-  assert.deepEqual(plain(await callAuthRequired(context, challenge("a"))), { cancel: true });
-
-  assert.equal(chrome.proxy.settings.clearCalls.length, 0);
   assert.equal(chrome.storage.local.data.active, true);
-  assert.equal(chrome.storage.session.data.authBlocked, true);
-  assert.match(chrome.storage.local.data.lastError, /blocked/i);
-  assert.equal(chrome.action.badgeTextCalls.at(-1).text, "!");
-
-  // Other requests get no credentials while blocked, so the provider is not hammered.
-  assert.deepEqual(plain(await callAuthRequired(context, challenge("b"))), { cancel: true });
 });
 
-test("reconnecting after a block re-enables credentials", async () => {
-  const chrome = createChromeMock({
-    local: { disclaimerAccepted: true, blockOnFailure: true },
-    session: { sessionConnected: true, authBlocked: true },
+test("browser start re-applies a proxy that was on and clears one that was off", async () => {
+  const on = loadBackground({ local: { active: true, proxy, lastError: "old" } });
+  await on.fire("runtime.onStartup");
+  assert.deepEqual(names(on.chrome), ["set", "get"]);
+  assert.equal(on.chrome.storage.local.data.lastError, "");
+  assert.equal(on.chrome.action.icons.at(-1), "icons/icon16-on.png");
+
+  const off = loadBackground({ local: { active: false, proxy } });
+  await off.fire("runtime.onStartup");
+  assert.deepEqual(names(off.chrome), ["clear"]);
+  assert.equal(off.chrome.action.icons.at(-1), "icons/icon16.png");
+});
+
+test("keyboard shortcut toggles the saved proxy and flags failures on the icon", async () => {
+  const { chrome } = loadBackground({ local: { proxy } });
+  const [{ listener }] = chrome.commands.onCommand.listeners;
+
+  await listener("toggle-proxy");
+  assert.equal(chrome.storage.local.data.active, true);
+  await listener("toggle-proxy");
+  assert.equal(chrome.storage.local.data.active, false);
+  await listener("something-else");
+  assert.equal(chrome.storage.local.data.active, false);
+
+  const empty = loadBackground();
+  await empty.chrome.commands.onCommand.listeners[0].listener("toggle-proxy");
+  assert.deepEqual(empty.chrome.calls, []);
+
+  const broken = loadBackground({ local: { proxy }, setError: "Not allowed." });
+  await broken.chrome.commands.onCommand.listeners[0].listener("toggle-proxy");
+  assert.equal(broken.chrome.action.badge.at(-1), "!");
+  assert.equal(broken.chrome.action.title.at(-1), "Not allowed.");
+});
+
+test("update imports the proxy that was in use from the old profile storage", async () => {
+  const profile = { id: "p1", name: "Work", scheme: "https", host: "old.example.com", port: 443, username: "me" };
+  const { chrome } = loadBackground({
+    local: {
+      disclaimerAccepted: true,
+      active: true,
+      proxyProfiles: [profile],
+      selectedProfileId: "p1",
+      activeProfileId: "p1",
+      activeProxy: profile,
+      profilePasswords: { p1: "old-secret" },
+      schemaVersion: 1,
+    },
   });
-  const context = createRuntimeContext({ chrome, includeStorage: false, includeBackground: true });
-  const [{ listener }] = chrome.runtime.onMessage.listeners;
 
-  await new Promise((resolve) =>
-    listener(
-      {
-        command: "connect",
-        profile: { scheme: "http", host: "proxy.example.com", port: 8080, username: "user" },
-        password: "right",
-      },
-      {},
-      resolve,
-    ),
-  );
+  await chrome.runtime.onInstalled.listeners[0].listener();
 
-  const granted = await callAuthRequired(context, {
-    requestId: "fresh",
-    isProxy: true,
-    challenger: { host: "proxy.example.com", port: 8080 },
+  assert.deepEqual(plain(chrome.storage.local.data.proxy), {
+    scheme: "https",
+    host: "old.example.com",
+    port: 443,
+    username: "me",
+    password: "old-secret",
   });
-  assert.deepEqual(plain(granted), { authCredentials: { username: "user", password: "right" } });
+  assert.equal(chrome.storage.local.data.active, true);
+  assert.equal(chrome.storage.local.data.proxyProfiles, undefined);
+  assert.equal(chrome.storage.local.data.profilePasswords, undefined);
+  assert.equal(chrome.storage.local.data.schemaVersion, undefined);
+  assert.equal(chrome.storage.local.data.disclaimerAccepted, true);
+  assert.equal(chrome.calls[0].details.value.rules.singleProxy.host, "old.example.com");
 });
 
-test("WebRTC protection applies only while the proxy is on and the user opted in", async () => {
-  const chrome = createChromeMock({ local: { disclaimerAccepted: true }, withPrivacy: true });
-  createRuntimeContext({ chrome, includeStorage: false, includeBackground: true });
-  const [{ listener }] = chrome.runtime.onMessage.listeners;
-  const send = (message) => new Promise((resolve) => listener(message, {}, resolve));
-  const policy = chrome.privacy.network.webRTCIPHandlingPolicy;
-  const profile = { scheme: "http", host: "proxy.example.com", port: 8080, username: "" };
-
-  await send({ command: "connect", profile });
-  assert.equal(policy.setCalls.length, 0);
-
-  await send({ command: "setSettings", settings: { webRtcProtection: true } });
-  assert.deepEqual(plain(policy.setCalls.at(-1)), { value: "disable_non_proxied_udp" });
-
-  const clearedBefore = policy.clearCalls;
-  await send({ command: "disconnect" });
-  assert.equal(policy.clearCalls, clearedBefore + 1);
-});
-
-test("background works without the optional privacy permission", async () => {
-  const chrome = createChromeMock({ local: { disclaimerAccepted: true, webRtcProtection: true } });
-  createRuntimeContext({ chrome, includeStorage: false, includeBackground: true });
-  const [{ listener }] = chrome.runtime.onMessage.listeners;
-
-  const response = await new Promise((resolve) =>
-    listener(
-      { command: "connect", profile: { scheme: "http", host: "proxy.example.com", port: 8080, username: "" } },
-      {},
-      resolve,
-    ),
-  );
-
-  assert.equal(response.ok, true);
-});
-
-test("renameProfile and setSettings commands return the updated status", async () => {
-  const chrome = createChromeMock({ local: { disclaimerAccepted: true } });
-  createRuntimeContext({ chrome, includeStorage: false, includeBackground: true });
-  const [{ listener }] = chrome.runtime.onMessage.listeners;
-  const send = (message) => new Promise((resolve) => listener(message, {}, resolve));
-
-  const saved = await send({
-    command: "saveProfile",
-    name: "one.example.com",
-    profile: { scheme: "http", host: "one.example.com", port: 8080, username: "" },
+test("update never pairs the connected proxy with another profile's password", async () => {
+  const connected = { scheme: "http", host: "connected.example.com", port: 8080, username: "me" };
+  const { chrome } = loadBackground({
+    local: {
+      active: true,
+      activeProxy: connected,
+      activeProfileId: "",
+      selectedProfileId: "other",
+      profilePasswords: { other: "other-secret" },
+    },
   });
-  const profileId = saved.state.selectedProfileId;
 
-  const renamed = await send({ command: "renameProfile", profileId, name: "Home" });
-  assert.equal(renamed.state.proxyProfiles[0].name, "Home");
+  await chrome.runtime.onInstalled.listeners[0].listener();
 
-  const settings = await send({ command: "setSettings", settings: { blockOnFailure: true } });
-  assert.equal(settings.state.blockOnFailure, true);
+  assert.equal(chrome.storage.local.data.proxy, undefined);
+  assert.equal(chrome.storage.local.data.active, false);
+});
+
+test("update drops old proxies it cannot carry over and turns them off", async () => {
+  const socks = { scheme: "socks5", host: "127.0.0.1", port: 1080, username: "" };
+  const noPassword = { scheme: "http", host: "x.example.com", port: 80, username: "me" };
+
+  for (const activeProxy of [socks, noPassword]) {
+    const { chrome } = loadBackground({ local: { active: true, activeProxy, proxyProfile: activeProxy } });
+    await chrome.runtime.onInstalled.listeners[0].listener();
+
+    assert.equal(chrome.storage.local.data.proxy, undefined);
+    assert.equal(chrome.storage.local.data.active, false);
+    assert.deepEqual(names(chrome), ["clear"]);
+  }
 });

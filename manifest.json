@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Proxy Switcher",
-  "version": "3.3.0",
+  "version": "4.0.0",
   "minimum_chrome_version": "108",
   "description": "Chrome proxy switcher for user-provided HTTP and HTTPS proxies.",
   "action": {
@@ -25,10 +25,9 @@
     }
   },
   "permissions": ["proxy", "storage", "webRequest", "webRequestAuthProvider"],
-  "optional_permissions": ["privacy"],
   "host_permissions": ["<all_urls>"],
   "content_security_policy": {
-    "extension_pages": "default-src 'self'; script-src 'self'; object-src 'self'; base-uri 'none'; connect-src https://www.gstatic.com"
+    "extension_pages": "default-src 'self'; script-src 'self'; object-src 'self'; base-uri 'none'"
   },
   "icons": {
     "16": "icons/icon16.png",

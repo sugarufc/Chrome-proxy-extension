@@ -16,9 +16,7 @@ What it does:
 
 - lets you paste your proxy as a single string (`scheme://user:pass@host:port`, `host:port`, or `host:port:user:pass`)
 - turns the proxy on and off with one toggle or a keyboard shortcut
-- verifies the connection automatically after turning the proxy on and shows the response time
 - reconnects the proxy automatically after a browser restart if it was on
-- saves named proxy profiles
 - stores proxy settings and the password locally on your device; Forget saved data removes everything
 
 What it does not do:
@@ -60,10 +58,6 @@ Required to handle proxy authentication challenges for the configured proxy.
 ### webRequestAuthProvider
 
 Required to provide username and password to the configured proxy when Chrome requests proxy authentication.
-
-### privacy (optional)
-
-Requested only when the user enables "Block WebRTC IP leaks". Used solely to set Chrome's WebRTC IP handling policy to `disable_non_proxied_udp` while the proxy is on and to restore it when the proxy is turned off.
 
 ### Host permission: `<all_urls>`
 
@@ -121,19 +115,21 @@ This extension only configures Chrome to use the proxy you provide. It does not 
 
 ## Store graphics
 
-| Asset                 | File                                                                 | Size     | Use in Chrome Web Store                    |
-| --------------------- | -------------------------------------------------------------------- | -------- | ------------------------------------------ |
-| Promo banner          | `store-assets/promo-tile.png`                                        | 1024×409 | Optional marketing / GitHub social preview |
-| Main form screenshot  | `store-assets/screenshot-main-form-1280x800.png`                     | 1280×800 | Upload as store screenshot #1              |
-| Disclaimer screenshot | `store-assets/screenshot-disclaimer-1280x800.png`                    | 1280×800 | Upload as store screenshot #2              |
-| Source captures       | `store-assets/screenshot-main-form.png`, `screenshot-disclaimer.png` | original | Keep for future edits only                 |
+All images show the current 4.0 popup.
 
-Upload the `*-1280x800.png` files in the Chrome Web Store dashboard.
+| Asset            | File                                               | Size     | Use in Chrome Web Store |
+| ---------------- | -------------------------------------------------- | -------- | ----------------------- |
+| Overview         | `store-assets/screenshot-1-overview-1280x800.png`  | 1280×800 | Screenshot #1           |
+| Connected        | `store-assets/screenshot-2-connected-1280x800.png` | 1280×800 | Screenshot #2           |
+| Disclaimer       | `store-assets/screenshot-disclaimer-1280x800.png`  | 1280×800 | Screenshot #3           |
+| Marquee promo    | `store-assets/promo-marquee-1400x560.png`          | 1400×560 | Marquee promo tile      |
+| Small promo tile | `store-assets/promo-small-440x280.png`             | 440×280  | Small promo tile        |
 
 ## Screenshot captions
 
-1. `screenshot-main-form-1280x800.png` — Enter your proxy settings locally in Chrome and connect with one click.
-2. `screenshot-disclaimer-1280x800.png` — Review the disclaimer and user responsibility notice before first use.
+1. Overview — Paste a proxy, flip the switch. HTTP and HTTPS, reconnects after a browser restart.
+2. Connected — The status line shows the proxy in use; the toggle turns it off again.
+3. Disclaimer — Review the disclaimer and user responsibility notice before first use.
 
 ## Prohibited marketing phrases
 

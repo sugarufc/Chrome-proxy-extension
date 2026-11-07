@@ -1,28 +1,19 @@
 # Release Notes
 
-## 3.3.0
+## 4.0.0
 
-- **New:** every connected proxy is saved automatically as a profile (named after its host), so the keyboard shortcut
-  and the reconnect after a browser restart always work. "Unsaved proxy" is now "New proxy".
-- **New:** rename a profile from the popup.
-- **New (optional):** "Block traffic if the proxy login fails" keeps Chrome pointed at the proxy so requests fail
-  instead of silently going out directly, and stops sending the wrong credentials to the provider.
-- **New (optional):** "Block WebRTC IP leaks" restricts WebRTC UDP while the proxy is on. It uses the optional
-  `privacy` permission, which Chrome asks for only when you enable the option.
+Back to the essentials: paste one proxy, flip the switch.
 
-- **Fixed:** connecting to a different proxy while a saved profile was selected overwrote that profile's password,
-  so the profile later showed its own host with the wrong password. A connection is now tied to a saved profile only
-  when it really is that profile; otherwise the dropdown shows "Unsaved proxy".
-- **Fixed:** the status line no longer flips to a premature "Connected" or overwrites a check result when storage
-  changes while a connect is in progress.
-- **Fixed:** the first requests after a browser start could show Chrome's own proxy sign-in dialog; the session is now
-  restored on demand from saved data.
-- **Fixed:** fast toggle / shortcut sequences could interleave; state-changing commands now run one at a time.
-- **Better errors:** a failed connection check reports the actual reason (unreachable, refused, unknown host, bad
-  certificate, wrong password) instead of always "The proxy is not responding." Old errors are cleared on browser start.
-- The connection check refuses to run while the proxy is off (it would only measure the direct connection).
-- The button reads "Update profile" when a saved profile is selected and "Save as profile" for an unsaved proxy.
-- Removed the unused `lastProxyError` state and dead code; the webRequest error listener is scoped to the check URL only.
+- **Simpler:** one proxy instead of profiles. Removed profile management and renaming, the WebRTC and
+  block-on-failure options, and the connection test. Chrome already shows its own error page when a proxy fails.
+- **Lighter:** the extension code is about a third of its previous size, with no separate storage module and no session
+  mirror of the password. The extension makes no network requests of its own.
+- **Fixed:** `host:port:user:pass` rejected passwords containing `@` or `/`.
+- **Fixed:** commands could interleave on a fast toggle; they now run one at a time.
+- **Kept:** automatic reconnect after a restart, `Alt+Shift+P`, local addresses always direct, credentials sent only
+  to the configured proxy, and turning the proxy off after a rejected login.
+- **Upgrading:** the proxy that was in use (or selected) is imported automatically; other profiles are dropped. The
+  last version with profiles and options is the git tag `v3.3.0`.
 
 # 3.2.0
 

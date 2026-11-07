@@ -9,16 +9,12 @@ function readJson(fileName) {
   return JSON.parse(fs.readFileSync(path.join(rootDir, fileName), "utf8"));
 }
 
-test("manifest CSP allows connections only to the connection test endpoint", () => {
-  const manifest = readJson("manifest.json");
-  const csp = manifest.content_security_policy.extension_pages;
+test("manifest CSP allows only the extension's own code and no network access", () => {
+  const csp = readJson("manifest.json").content_security_policy.extension_pages;
 
-  // The extension_pages CSP also governs the MV3 service worker, so the
-  // testConnection fetch needs an explicit connect-src allowance.
-  assert.match(csp, /connect-src https:\/\/www\.gstatic\.com(;|$)/);
-  assert.doesNotMatch(csp, /connect-src 'none'/);
+  assert.match(csp, /default-src 'self'/);
   assert.match(csp, /script-src 'self'/);
-  assert.match(csp, /object-src 'self'/);
+  assert.doesNotMatch(csp, /connect-src|unsafe|https?:/);
 });
 
 test("manifest version stays in sync with package.json", () => {
@@ -26,23 +22,7 @@ test("manifest version stays in sync with package.json", () => {
   const packageJson = readJson("package.json");
 
   assert.equal(manifest.version, packageJson.version);
-  assert.equal(manifest.version, "3.3.0");
-});
-
-test("manifest version is newer than the last Chrome Web Store package", () => {
-  const manifest = readJson("manifest.json");
-  const versionParts = manifest.version.split(".").map(Number);
-  const lastStoreVersionParts = [3, 1, 6];
-
-  const isNewer = versionParts.some(
-    (part, index) =>
-      part > lastStoreVersionParts[index] &&
-      versionParts
-        .slice(0, index)
-        .every((earlierPart, earlierIndex) => earlierPart === lastStoreVersionParts[earlierIndex]),
-  );
-
-  assert.equal(isNewer, true, `Manifest version ${manifest.version} must be newer than Chrome Web Store version 3.1.6`);
+  assert.equal(manifest.version, "4.0.0");
 });
 
 test("manifest requires Chrome 108 or newer", () => {
@@ -62,7 +42,7 @@ test("manifest requests only the permissions the extension uses", () => {
   const manifest = readJson("manifest.json");
 
   assert.deepEqual(manifest.permissions.sort(), ["proxy", "storage", "webRequest", "webRequestAuthProvider"]);
-  assert.deepEqual(manifest.optional_permissions, ["privacy"]);
+  assert.equal(manifest.optional_permissions, undefined);
   assert.deepEqual(manifest.host_permissions, ["<all_urls>"]);
 });
 
