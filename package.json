@@ -12,7 +12,7 @@
     "build": "./scripts/build.sh"
   },
   "devDependencies": {
-    "eslint": "^9.39.2",
-    "prettier": "^3.8.0"
+    "eslint": "^10.15.0",
+    "prettier": "^3.10.1"
   }
 }
