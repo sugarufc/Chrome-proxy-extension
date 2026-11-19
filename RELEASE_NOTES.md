@@ -1,8 +1,19 @@
 # Release Notes
 
-## 4.0.0
+## 4.1.0
 
 **Release date:** not released yet
+
+- **Safer:** if another extension or a policy takes over Chrome's proxy settings, the proxy turns off, the popup
+  says why, and the password is no longer sent to proxy logins.
+- **Safer:** an old 3.x proxy is imported only if it is still valid (HTTP/HTTPS, host, port 1–65535).
+- **Clearer:** whenever the proxy turns off because of an error (rejected login, another extension took over, a
+  failed connect), the toolbar icon shows `!` and its tooltip gives the reason.
+- **Sturdier:** a Chrome call that never answers fails after 10 seconds instead of blocking every later command.
+- **New:** the popup follows the system dark theme, and screen readers announce status changes.
+- The extension is now licensed under MIT.
+
+## 4.0.0
 
 Back to the essentials: paste one proxy, flip the switch.
 
@@ -12,13 +23,6 @@ Back to the essentials: paste one proxy, flip the switch.
   mirror of the password. The extension makes no network requests of its own.
 - **Fixed:** `host:port:user:pass` rejected passwords containing `@` or `/`.
 - **Fixed:** commands could interleave on a fast toggle; they now run one at a time.
-- **Safer:** if another extension or a policy takes over Chrome's proxy settings, the proxy turns off, the popup
-  says why, and the password is no longer sent to proxy logins.
-- **Safer:** an old 3.x proxy is imported only if it is still valid (HTTP/HTTPS, host, port 1–65535).
-- **Clearer:** whenever the proxy turns off because of an error (rejected login, another extension took over, a
-  failed connect), the toolbar icon shows `!` and its tooltip gives the reason.
-- **Sturdier:** a Chrome call that never answers fails after 10 seconds instead of blocking every later command.
-- **New:** the popup follows the system dark theme, and screen readers announce status changes.
 - **Kept:** automatic reconnect after a restart, `Alt+Shift+P`, local addresses always direct, credentials sent only
   to the configured proxy, and turning the proxy off after a rejected login.
 - **Upgrading:** the proxy that was in use (or selected) is imported automatically; other profiles are dropped. The

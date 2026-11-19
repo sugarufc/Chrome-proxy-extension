@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "proxy-switcher",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "description": "Manifest V3 Chrome proxy switcher.",
   "license": "MIT",
   "engines": {
