@@ -1,4 +1,6 @@
 const assert = require("node:assert/strict");
+const { readFileSync } = require("node:fs");
+const path = require("node:path");
 const test = require("node:test");
 
 const { loadPopup } = require("./helpers/load-extension-scripts.js");
@@ -22,6 +24,11 @@ test("first open shows the disclaimer and keeps the switch locked until it is ac
   assert.equal($("proxyToggle").disabled, true);
   assert.equal($("acceptButton").disabled, true);
   assert.match($("versionLabel").textContent, /^Version \d+\.\d+\.\d+$/);
+  // The developer link opens in a new tab and gives the site no access to the popup.
+  assert.match(
+    readFileSync(path.join(__dirname, "..", "popup.html"), "utf8"),
+    /<a href="https:\/\/mgmdov\.com" target="_blank" rel="noopener noreferrer"/,
+  );
 
   // Enter does nothing while the switch is locked.
   $("proxyInput").value = "proxy.example.com:8080";

@@ -330,6 +330,17 @@ input:focus {
   text-align: center;
 }
 
+.version-label a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.version-label a:hover,
+.version-label a:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
 .button {
   height: 38px;
   border: 1px solid transparent;

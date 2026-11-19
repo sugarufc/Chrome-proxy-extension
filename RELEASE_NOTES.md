@@ -12,6 +12,7 @@
 - **Sturdier:** a Chrome call that never answers fails after 10 seconds instead of blocking every later command.
 - **New:** the popup follows the system dark theme, and screen readers announce status changes.
 - The extension is now licensed under MIT.
+- The popup footer links to the developer's website.
 
 ## 4.0.0
 
