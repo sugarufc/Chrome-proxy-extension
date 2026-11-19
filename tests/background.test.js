@@ -119,6 +119,30 @@ test("commands run one at a time", async () => {
   assert.equal(chrome.storage.local.data.active, true);
 });
 
+test("a Chrome API that never answers fails the command after a timeout and frees the queue", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const { send } = loadBackground({ hang: "set" });
+
+  const pending = send({ command: "connect", input: "proxy.example.com:8080" });
+  await new Promise((resolve) => setImmediate(resolve));
+  t.mock.timers.tick(10_000);
+  const response = await pending;
+
+  assert.equal(response.ok, false);
+  assert.match(response.error, /did not respond/);
+  assert.equal((await send({ command: "getStatus" })).ok, true);
+});
+
+test("a successful connect or disconnect clears the error flag on the icon", async () => {
+  const { chrome, send } = loadBackground({ local: { proxy, lastError: "Old failure." } });
+
+  await send({ command: "connect", input: "proxy.example.com:8080" });
+  assert.equal(chrome.action.badge.at(-1), "");
+  await send({ command: "disconnect" });
+  assert.equal(chrome.action.badge.at(-1), "");
+  assert.equal(chrome.action.title.at(-1), "Proxy Switcher");
+});
+
 test("proxy auth answers only the configured proxy", async () => {
   const { auth } = loadBackground({ local: { active: true, proxy } });
 
@@ -149,6 +173,7 @@ test("losing control of the proxy settings turns the proxy off and says why", as
   assert.match(chrome.storage.local.data.lastError, /took over/);
   assert.deepEqual(names(chrome), ["clear"]);
   assert.equal(chrome.action.icons.at(-1), "icons/icon16.png");
+  assert.equal(chrome.action.badge.at(-1), "!");
 
   // Our own clear fires the event again; nothing more happens while the proxy is off.
   await onChange({ levelOfControl: "controllable_by_this_extension" });
@@ -173,6 +198,8 @@ test("a rejected login turns the proxy off after two retries", async () => {
   assert.equal(chrome.storage.local.data.active, false);
   assert.equal(chrome.storage.local.data.lastError, "Proxy authentication failed. Proxy turned off.");
   assert.ok(names(chrome).includes("clear"));
+  assert.equal(chrome.action.badge.at(-1), "!");
+  assert.equal(chrome.action.title.at(-1), "Proxy authentication failed. Proxy turned off.");
   // Other requests are no longer answered once the proxy is off.
   assert.deepEqual(plain(await auth(challenge("other"))), {});
 });

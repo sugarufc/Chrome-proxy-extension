@@ -9,6 +9,8 @@ const AUTH_ATTEMPTS_MAX = 100;
 const AUTH_FAILURE_MESSAGE = "Proxy authentication failed. Proxy turned off.";
 const CONTROLLED = "controlled_by_this_extension";
 const CONTROL_LOST_MESSAGE = "Another extension or a policy took over Chrome's proxy settings. Proxy turned off.";
+const TASK_TIMEOUT_MS = 10_000;
+const TASK_TIMEOUT_MESSAGE = "Chrome did not respond in time. Try again.";
 // Keys written by older versions (profiles, session passwords, ...). Imported once, then removed.
 const OLD_KEYS = [
   "proxyProfile",
@@ -37,9 +39,18 @@ const OLD_KEYS = [
 const authAttempts = new Map();
 let queue = Promise.resolve();
 
+// A Chrome API that never answers must not block every later command.
+function withTimeout(promise) {
+  let timer;
+  const timeout = new Promise((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(TASK_TIMEOUT_MESSAGE)), TASK_TIMEOUT_MS);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 // State-changing work runs one at a time, so a quick toggle can never interleave.
 function exclusive(task) {
-  const result = queue.then(task);
+  const result = queue.then(() => withTimeout(task()));
   queue = result.catch(() => {});
   return result;
 }
@@ -57,10 +68,14 @@ function proxySettings(method, details) {
   });
 }
 
-function setIcon(active) {
+// "!" on the icon means the proxy is off because of an error; the popup shows the reason.
+function setIcon(active, error = "") {
   const suffix = active ? "-on" : "";
-  chrome.action.setBadgeText({ text: "" });
-  chrome.action.setTitle({ title: "Proxy Switcher" });
+  chrome.action.setBadgeText({ text: error ? "!" : "" });
+  if (error) {
+    chrome.action.setBadgeBackgroundColor({ color: "#d93025" });
+  }
+  chrome.action.setTitle({ title: error || "Proxy Switcher" });
   chrome.action.setIcon({
     path: {
       16: `icons/icon16${suffix}.png`,
@@ -89,7 +104,7 @@ async function clearProxy() {
 async function turnOff(error = "") {
   await clearProxy();
   await chrome.storage.local.set({ active: false, lastError: error });
-  setIcon(false);
+  setIcon(false, error);
 }
 
 async function connectProxy(proxy) {
@@ -189,10 +204,8 @@ async function toggleFromShortcut() {
 
   try {
     await connectProxy(proxy);
-  } catch (error) {
-    chrome.action.setBadgeText({ text: "!" });
-    chrome.action.setBadgeBackgroundColor({ color: "#d93025" });
-    chrome.action.setTitle({ title: error.message });
+  } catch (_error) {
+    // connectProxy has already turned the proxy off and flagged the icon.
   }
 }
 
