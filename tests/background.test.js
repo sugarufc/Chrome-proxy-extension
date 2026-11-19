@@ -129,6 +129,32 @@ test("proxy auth answers only the configured proxy", async () => {
   assert.deepEqual(plain(await auth({ requestId: "d", isProxy: true })), {});
 });
 
+test("proxy auth does nothing once another extension or a policy controls the proxy", async () => {
+  const { chrome, auth } = loadBackground({ local: { active: true, proxy } });
+  chrome.proxy.levelOfControl = "controlled_by_other_extensions";
+
+  assert.deepEqual(plain(await auth(challenge("a"))), {});
+});
+
+test("losing control of the proxy settings turns the proxy off and says why", async () => {
+  const { chrome } = loadBackground({ local: { active: true, proxy } });
+  const [{ listener: onChange }] = chrome.proxy.settings.onChange.listeners;
+
+  await onChange({ levelOfControl: "controlled_by_this_extension" });
+  assert.equal(chrome.storage.local.data.active, true);
+  assert.deepEqual(chrome.calls, []);
+
+  await onChange({ levelOfControl: "controlled_by_other_extensions" });
+  assert.equal(chrome.storage.local.data.active, false);
+  assert.match(chrome.storage.local.data.lastError, /took over/);
+  assert.deepEqual(names(chrome), ["clear"]);
+  assert.equal(chrome.action.icons.at(-1), "icons/icon16.png");
+
+  // Our own clear fires the event again; nothing more happens while the proxy is off.
+  await onChange({ levelOfControl: "controllable_by_this_extension" });
+  assert.deepEqual(names(chrome), ["clear"]);
+});
+
 test("proxy auth does nothing while the proxy is off or has no credentials", async () => {
   const off = loadBackground({ local: { active: false, proxy } });
   assert.deepEqual(plain(await off.auth(challenge("a"))), {});
@@ -248,8 +274,10 @@ test("update never pairs the connected proxy with another profile's password", a
 test("update drops old proxies it cannot carry over and turns them off", async () => {
   const socks = { scheme: "socks5", host: "127.0.0.1", port: 1080, username: "" };
   const noPassword = { scheme: "http", host: "x.example.com", port: 80, username: "me" };
+  const badPorts = [0, 70000, "abc", undefined].map((port) => ({ scheme: "http", host: "x.example.com", port }));
+  const badHost = { scheme: "http", host: "bad host/path", port: 8080 };
 
-  for (const activeProxy of [socks, noPassword]) {
+  for (const activeProxy of [socks, noPassword, ...badPorts, badHost]) {
     const { chrome } = loadBackground({ local: { active: true, activeProxy, proxyProfile: activeProxy } });
     await chrome.runtime.onInstalled.listeners[0].listener();
 

@@ -23,6 +23,7 @@ Use this checklist before submitting to the Chrome Web Store.
 - [ ] Wrong password: the proxy turns off by itself and the popup says why
 - [ ] `localhost` and `127.0.0.1` are opened directly, without the proxy
 - [ ] A website's own login prompt never receives the proxy credentials
+- [ ] Another proxy extension taking over (enable it while connected): the proxy turns off and the popup says why
 
 ## Shortcut, icon and restart
 

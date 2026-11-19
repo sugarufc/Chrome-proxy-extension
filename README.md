@@ -72,6 +72,8 @@ The user confirms that they:
 - The popup shows the saved proxy, including the password, in plain text
 - Do not use the extension on shared or untrusted Chrome profiles where other people can open the popup
 - Credentials are sent only to the configured proxy (matched by port), never to websites
+- If another extension or a policy takes over Chrome's proxy settings, the proxy turns off and credentials are no
+  longer sent
 - The extension makes no network requests of its own
 
 ## Build instructions

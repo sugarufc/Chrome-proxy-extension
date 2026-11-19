@@ -1,11 +1,17 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const { pathToFileURL } = require("node:url");
 const vm = require("node:vm");
 
 const rootDir = path.resolve(__dirname, "../..");
 
 function readRuntimeFile(fileName) {
   return fs.readFileSync(path.join(rootDir, fileName), "utf8");
+}
+
+// node --test counts coverage only for scripts named by a file: URL.
+function runRuntimeFile(fileName, context) {
+  vm.runInContext(readRuntimeFile(fileName), context, { filename: pathToFileURL(path.join(rootDir, fileName)).href });
 }
 
 function createEvent() {
@@ -53,7 +59,7 @@ function createChromeMock({
   const settingsCall = (name, error) => (details, callback) => {
     calls.push({ name, details });
     chrome.runtime.lastError = error ? { message: error } : null;
-    callback(name === "get" ? { levelOfControl } : undefined);
+    callback(name === "get" ? { levelOfControl: chrome.proxy.levelOfControl } : undefined);
     chrome.runtime.lastError = null;
   };
 
@@ -70,7 +76,16 @@ function createChromeMock({
     },
     commands: { onCommand: createEvent() },
     runtime: { lastError: null, onInstalled: createEvent(), onMessage: createEvent(), onStartup: createEvent() },
-    proxy: { settings: { set: settingsCall("set", setError), get: settingsCall("get"), clear: settingsCall("clear") } },
+    proxy: {
+      // Tests change this to simulate another extension or a policy taking over.
+      levelOfControl,
+      settings: {
+        set: settingsCall("set", setError),
+        get: settingsCall("get"),
+        clear: settingsCall("clear"),
+        onChange: createEvent(),
+      },
+    },
     storage: { local: createStorageArea(local), session: { ...createStorageArea(session) } },
     webRequest: { onAuthRequired: createEvent() },
   };
@@ -80,8 +95,8 @@ function createChromeMock({
 function loadScripts(files, chrome) {
   const context = { chrome, URL };
   vm.createContext(context);
-  context.importScripts = (...names) => names.forEach((name) => vm.runInContext(readRuntimeFile(name), context));
-  files.forEach((name) => vm.runInContext(readRuntimeFile(name), context, { filename: name }));
+  context.importScripts = (...names) => names.forEach((name) => runRuntimeFile(name, context));
+  files.forEach((name) => runRuntimeFile(name, context));
   return context;
 }
 

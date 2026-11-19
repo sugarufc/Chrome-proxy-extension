@@ -2,11 +2,13 @@
 
 importScripts("shared.js");
 
-const { SCHEMES, parseProxyInput, formatProxyString, buildProxyConfig } = ProxyShared;
+const { parseProxyInput, formatProxyString, buildProxyConfig } = ProxyShared;
 
 const AUTH_RETRY_LIMIT = 2;
 const AUTH_ATTEMPTS_MAX = 100;
 const AUTH_FAILURE_MESSAGE = "Proxy authentication failed. Proxy turned off.";
+const CONTROLLED = "controlled_by_this_extension";
+const CONTROL_LOST_MESSAGE = "Another extension or a policy took over Chrome's proxy settings. Proxy turned off.";
 // Keys written by older versions (profiles, session passwords, ...). Imported once, then removed.
 const OLD_KEYS = [
   "proxyProfile",
@@ -71,7 +73,7 @@ function setIcon(active) {
 async function applyProxy(proxy) {
   await proxySettings("set", { value: buildProxyConfig(proxy), scope: "regular" });
   const { levelOfControl } = await proxySettings("get", {});
-  if (levelOfControl !== "controlled_by_this_extension") {
+  if (levelOfControl !== CONTROLLED) {
     throw new Error("Another extension or a policy is managing Chrome's proxy settings.");
   }
 }
@@ -112,6 +114,27 @@ async function getStatus() {
   };
 }
 
+// An old profile is kept only if it passes the same checks as a pasted proxy
+// (HTTP/HTTPS, host, port 1-65535, a password for a username).
+function importOldProxy(profile, password) {
+  if (!profile || !profile.host) {
+    return null;
+  }
+  try {
+    return parseProxyInput(
+      formatProxyString({
+        scheme: String(profile.scheme || "").toLowerCase(),
+        host: profile.host,
+        port: profile.port,
+        username: profile.username || "",
+        password: profile.username ? password : "",
+      }),
+    );
+  } catch (_error) {
+    return null;
+  }
+}
+
 // Pre-4.0 data had several profiles. Keep the proxy that was in use (or selected).
 async function migrateOldData() {
   const old = await chrome.storage.local.get(null);
@@ -124,22 +147,9 @@ async function migrateOldData() {
   const profileId = old.activeProxy ? old.activeProfileId : old.selectedProfileId;
   const profile = old.activeProxy || profiles.find((item) => item.id === profileId) || old.proxyProfile;
   const password = ((old.profilePasswords || {})[profileId] || old.savedPassword || "").toString();
-  const scheme = String((profile && profile.scheme) || "").toLowerCase();
-  const usable = !old.proxy && profile && SCHEMES.has(scheme) && profile.host && (!profile.username || password);
+  const proxy = old.proxy ? null : importOldProxy(profile, password);
 
-  const values = usable
-    ? {
-        proxy: {
-          scheme,
-          host: profile.host,
-          port: Number(profile.port),
-          username: profile.username || "",
-          password: profile.username ? password : "",
-        },
-      }
-    : { active: false };
-
-  await chrome.storage.local.set(values);
+  await chrome.storage.local.set(proxy ? { proxy } : { active: false });
   await chrome.storage.local.remove(OLD_KEYS);
   if (chrome.storage.session) {
     await chrome.storage.session.clear();
@@ -200,6 +210,11 @@ async function respondToAuth(details) {
   if (!isOurProxy) {
     return {};
   }
+  // If another extension or a policy has taken over, the challenge comes from someone else's proxy.
+  const { levelOfControl } = await proxySettings("get", {});
+  if (levelOfControl !== CONTROLLED) {
+    return {};
+  }
 
   const attempts = (authAttempts.get(details.requestId) || 0) + 1;
   authAttempts.delete(details.requestId);
@@ -254,6 +269,19 @@ chrome.webRequest.onAuthRequired.addListener(
   { urls: ["<all_urls>"] },
   ["asyncBlocking"],
 );
+
+// Our own set/clear also fires this event; it is ignored because the state is already up to date.
+async function onProxySettingsChange(details) {
+  if (details.levelOfControl === CONTROLLED) {
+    return;
+  }
+  const { active } = await chrome.storage.local.get("active");
+  if (active) {
+    await turnOff(CONTROL_LOST_MESSAGE);
+  }
+}
+
+chrome.proxy.settings.onChange.addListener((details) => exclusive(() => onProxySettingsChange(details)));
 
 chrome.commands.onCommand.addListener((command) =>
   command === "toggle-proxy" ? exclusive(toggleFromShortcut) : undefined,
