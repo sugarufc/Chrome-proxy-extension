@@ -17,6 +17,7 @@ export default [
         module: "readonly",
         ProxyShared: "readonly",
         require: "readonly",
+        setImmediate: "readonly",
         setTimeout: "readonly",
         URL: "readonly",
       },

@@ -7,7 +7,7 @@
     "lint": "eslint .",
     "format": "prettier --check .",
     "format:write": "prettier --write .",
-    "test": "node --test tests/*.test.js",
+    "test": "node --test --test-timeout=10000 tests/*.test.js",
     "test:coverage": "node --test --experimental-test-coverage --test-coverage-include=shared.js --test-coverage-lines=90 --test-coverage-functions=90 --test-coverage-branches=80 tests/shared.test.js",
     "build": "./scripts/build.sh"
   },

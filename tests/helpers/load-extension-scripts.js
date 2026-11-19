@@ -20,9 +20,23 @@ function createEvent() {
 }
 
 // Promise-based storage area like chrome.storage.* in Manifest V3.
-function createStorageArea(initial = {}) {
+// Like Chrome, it reports changes to chrome.storage.onChanged after the write has finished.
+function createStorageArea(initial = {}, onChanged = createEvent()) {
   const data = { ...initial };
   const keysOf = (keys) => (keys == null ? Object.keys(data) : [].concat(keys));
+  const write = (update) => {
+    const before = { ...data };
+    update();
+    const changes = {};
+    for (const key of new Set([...Object.keys(before), ...Object.keys(data)])) {
+      if (before[key] !== data[key]) {
+        changes[key] = { oldValue: before[key], newValue: data[key] };
+      }
+    }
+    if (Object.keys(changes).length) {
+      Promise.resolve().then(() => onChanged.listeners.forEach(({ listener }) => listener(changes, "local")));
+    }
+  };
 
   return {
     data,
@@ -34,17 +48,13 @@ function createStorageArea(initial = {}) {
       );
     },
     async set(values) {
-      Object.assign(data, values);
+      write(() => Object.assign(data, values));
     },
     async remove(keys) {
-      for (const key of [].concat(keys)) {
-        delete data[key];
-      }
+      write(() => [].concat(keys).forEach((key) => delete data[key]));
     },
     async clear() {
-      for (const key of Object.keys(data)) {
-        delete data[key];
-      }
+      write(() => Object.keys(data).forEach((key) => delete data[key]));
     },
   };
 }
@@ -54,10 +64,15 @@ function createChromeMock({
   session = {},
   levelOfControl = "controlled_by_this_extension",
   setError = "",
+  hang = "",
 } = {}) {
   const calls = [];
+  const onChanged = createEvent();
   const settingsCall = (name, error) => (details, callback) => {
     calls.push({ name, details });
+    if (name === hang) {
+      return; // Simulates a Chrome API that never answers.
+    }
     chrome.runtime.lastError = error ? { message: error } : null;
     callback(name === "get" ? { levelOfControl: chrome.proxy.levelOfControl } : undefined);
     chrome.runtime.lastError = null;
@@ -75,7 +90,15 @@ function createChromeMock({
       setIcon: (value) => chrome.action.icons.push(value.path[16]),
     },
     commands: { onCommand: createEvent() },
-    runtime: { lastError: null, onInstalled: createEvent(), onMessage: createEvent(), onStartup: createEvent() },
+    runtime: {
+      lastError: null,
+      onInstalled: createEvent(),
+      onMessage: createEvent(),
+      onStartup: createEvent(),
+      getManifest: () => JSON.parse(readRuntimeFile("manifest.json")),
+      // The popup talks to background.js loaded against the same mock.
+      sendMessage: (message, callback) => chrome.runtime.onMessage.listeners[0].listener(message, {}, callback),
+    },
     proxy: {
       // Tests change this to simulate another extension or a policy taking over.
       levelOfControl,
@@ -86,14 +109,21 @@ function createChromeMock({
         onChange: createEvent(),
       },
     },
-    storage: { local: createStorageArea(local), session: { ...createStorageArea(session) } },
+    storage: { onChanged, local: createStorageArea(local, onChanged), session: createStorageArea(session) },
     webRequest: { onAuthRequired: createEvent() },
   };
   return chrome;
 }
 
-function loadScripts(files, chrome) {
-  const context = { chrome, URL };
+function loadScripts(files, chrome, globals = {}) {
+  // Timers are looked up on each call so that node:test mock timers apply.
+  const context = {
+    chrome,
+    URL,
+    setTimeout: (...args) => setTimeout(...args),
+    clearTimeout: (...args) => clearTimeout(...args),
+    ...globals,
+  };
   vm.createContext(context);
   context.importScripts = (...names) => names.forEach((name) => runRuntimeFile(name, context));
   files.forEach((name) => runRuntimeFile(name, context));
@@ -116,4 +146,49 @@ function loadBackground(options = {}) {
   };
 }
 
-module.exports = { loadBackground, loadScripts, createChromeMock };
+// Just enough DOM for popup.js: the elements with an id in popup.html and their events.
+class FakeElement {
+  constructor(id, attributes) {
+    const flags = new Set(attributes.replace(/"[^"]*"/g, '""').split(/[\s/]+/));
+    this.id = id;
+    this.hidden = flags.has("hidden");
+    this.disabled = flags.has("disabled");
+    this.checked = false;
+    this.value = "";
+    this.textContent = "";
+    this.className = (attributes.match(/\bclass="([^"]*)"/) || [])[1] || "";
+    this.listeners = {};
+  }
+
+  addEventListener(type, listener) {
+    (this.listeners[type] = this.listeners[type] || []).push(listener);
+  }
+
+  dispatch(type, props = {}) {
+    const event = { type, target: this, defaultPrevented: false, ...props };
+    event.preventDefault = () => {
+      event.defaultPrevented = true;
+    };
+    (this.listeners[type] || []).forEach((listener) => listener(event));
+    return event;
+  }
+}
+
+function createDocument() {
+  const elements = new Map();
+  for (const [, attributes] of readRuntimeFile("popup.html").matchAll(/<[a-z0-9]+\s([^>]*\bid="[^"]+"[^>]*)>/gi)) {
+    const id = attributes.match(/\bid="([^"]+)"/)[1];
+    elements.set(id, new FakeElement(id, attributes));
+  }
+  return { elements, getElementById: (id) => elements.get(id) || null };
+}
+
+// Loads background.js and the popup against one fake chrome, like an opened popup.
+function loadPopup(options = {}) {
+  const background = loadBackground(options);
+  const document = createDocument();
+  loadScripts(["shared.js", "popup.js"], background.chrome, { document });
+  return { ...background, document, $: (id) => document.getElementById(id) };
+}
+
+module.exports = { loadBackground, loadPopup, loadScripts, createChromeMock };
