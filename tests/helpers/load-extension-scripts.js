@@ -187,7 +187,7 @@ function createDocument() {
 function loadPopup(options = {}) {
   const background = loadBackground(options);
   const document = createDocument();
-  loadScripts(["shared.js", "popup.js"], background.chrome, { document });
+  loadScripts(["popup.js"], background.chrome, { document });
   return { ...background, document, $: (id) => document.getElementById(id) };
 }
 

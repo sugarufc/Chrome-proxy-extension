@@ -3,6 +3,9 @@
   "name": "proxy-switcher",
   "version": "4.0.0",
   "description": "Manifest V3 Chrome proxy switcher.",
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "lint": "eslint .",
     "format": "prettier --check .",
