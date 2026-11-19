@@ -10,28 +10,32 @@ Configure Chrome to use your own HTTP or HTTPS proxy.
 
 ## Full description
 
+For version 4.1.0 and later. Paste the block below into the store as is (plain text, `•` bullets).
+
+```text
 Proxy Switcher is a single-purpose Chrome extension for applying a user-provided proxy configuration inside Chrome.
 
 What it does:
-
-- lets you paste your proxy as a single string (`scheme://user:pass@host:port`, `host:port`, or `host:port:user:pass`)
-- turns the proxy on and off with one toggle or a keyboard shortcut
-- reconnects the proxy automatically after a browser restart if it was on
-- stores proxy settings and the password locally on your device; Forget saved data removes everything
+• Accepts your proxy as a single string: scheme://user:pass@host:port, user:pass@host:port, host:port, or host:port:user:pass
+• Turns the proxy on and off with one toggle or the Alt+Shift+P keyboard shortcut
+• Reconnects the proxy automatically after a browser restart if it was on
+• Always connects local addresses (localhost, 127.0.0.1) directly
+• Sends your proxy login only to your proxy, never to websites
+• Turns the proxy off and shows "!" on its icon if the login is rejected or another extension takes over Chrome's proxy settings
+• Follows your system's light or dark theme
+• Stores the proxy and its password locally on your device, unencrypted; "Forget saved data" removes everything. Do not use on shared computers.
 
 What it does not do:
-
-- it does not provide proxy servers
-- it does not collect browsing history
-- it does not send your credentials to the developer
-- it does not include analytics or remote code
+• It does not provide proxy servers
+• It does not collect browsing history
+• It does not send your credentials to the developer
+• It does not include analytics or remote code
+• It makes no network requests of its own
 
 You are responsible for complying with applicable laws, website terms of service, and your proxy provider's terms.
 
-Supported proxy types:
-
-- HTTP
-- HTTPS
+Supported proxy types: HTTP and HTTPS. SOCKS is not supported.
+```
 
 ## Single purpose
 
