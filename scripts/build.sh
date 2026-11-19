@@ -8,13 +8,16 @@ STAGING_DIR="$DIST_DIR/staging"
 
 rm -rf "$STAGING_DIR" "$OUTPUT_ZIP"
 mkdir -p "$STAGING_DIR"
+trap 'rm -rf "$STAGING_DIR"' EXIT
 
 copy_path() {
   local path="$1"
-  if [[ -e "$ROOT_DIR/$path" ]]; then
-    mkdir -p "$STAGING_DIR/$(dirname "$path")"
-    cp -R "$ROOT_DIR/$path" "$STAGING_DIR/$path"
+  if [[ ! -e "$ROOT_DIR/$path" ]]; then
+    echo "Missing runtime file: $path" >&2
+    exit 1
   fi
+  mkdir -p "$STAGING_DIR/$(dirname "$path")"
+  cp -R "$ROOT_DIR/$path" "$STAGING_DIR/$path"
 }
 
 for path in \
