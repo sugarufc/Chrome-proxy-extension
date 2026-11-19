@@ -3,7 +3,8 @@
 Chrome proxy switcher for user-provided HTTP/HTTPS proxies.
 
 **Repository:** https://github.com/sugarufc/Chrome-proxy-extension  
-**Privacy policy:** https://github.com/sugarufc/Chrome-proxy-extension/blob/main/PRIVACY.md
+**Privacy policy:** https://github.com/sugarufc/Chrome-proxy-extension/blob/main/PRIVACY.md (the same text on GitHub
+Pages: https://sugarufc.github.io/Chrome-proxy-extension/privacy.html, from `docs/privacy.html`)
 
 ## Purpose
 

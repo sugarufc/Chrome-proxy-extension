@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Effective date:** July 9, 2026
+**Last updated:** November 19, 2026
 
 **Extension name:** Proxy Switcher
 
@@ -9,6 +9,9 @@
 Proxy Switcher does not collect, transmit, sell, or share user data with the developer or with third parties.
 
 All proxy settings and credentials entered by the user are stored only on the user's device inside the Chrome profile.
+
+The proxy username and password are sent only to the proxy server the user configured, and only when that proxy asks
+for them. They are never sent to websites, to the developer, or to third parties.
 
 ## What this extension does
 
@@ -97,6 +100,8 @@ This extension is not directed to children under 13, and we do not knowingly col
 ## Changes
 
 If this privacy policy changes, the updated version will be included with the extension package and published with future releases.
+
+The same policy is published at https://sugarufc.github.io/Chrome-proxy-extension/privacy.html.
 
 ## Contact
 
