@@ -18,6 +18,7 @@ Back to the essentials: paste one proxy, flip the switch.
 - **Clearer:** whenever the proxy turns off because of an error (rejected login, another extension took over, a
   failed connect), the toolbar icon shows `!` and its tooltip gives the reason.
 - **Sturdier:** a Chrome call that never answers fails after 10 seconds instead of blocking every later command.
+- **New:** the popup follows the system dark theme, and screen readers announce status changes.
 - **Kept:** automatic reconnect after a restart, `Alt+Shift+P`, local addresses always direct, credentials sent only
   to the configured proxy, and turning the proxy off after a rejected login.
 - **Upgrading:** the proxy that was in use (or selected) is imported automatically; other profiles are dropped. The
