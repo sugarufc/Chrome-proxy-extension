@@ -19,6 +19,7 @@ Use this checklist before submitting to the Chrome Web Store.
 - [ ] HTTP proxy without auth connects; websites load through it (check your IP)
 - [ ] HTTP proxy with auth connects
 - [ ] HTTPS proxy with auth connects
+- [ ] An IPv6 proxy in brackets (`http://[2001:db8::1]:3128`) connects, if one is available
 - [ ] SOCKS5 input is rejected
 - [ ] Wrong password: the proxy turns off by itself, the icon shows `!` and the popup says why
 - [ ] `localhost` and `127.0.0.1` are opened directly, without the proxy

@@ -103,6 +103,22 @@ test("host:port:user:pass keeps any character in the password, including @ and /
   assert.throws(() => parseProxyInput("user:p:w@proxy.example.com:8080"), /URL-encode/);
 });
 
+test("IPv6 proxies work in brackets; host:port:user:pass cannot carry them", () => {
+  const { parseProxyInput, formatProxyString } = shared();
+
+  assert.deepEqual(plain(parseProxyInput("http://u:p@[2001:db8::1]:3128")), {
+    scheme: "http",
+    username: "u",
+    password: "p",
+    host: "[2001:db8::1]",
+    port: 3128,
+  });
+  assert.equal(parseProxyInput("[::1]:8080").host, "[::1]");
+  assert.equal(formatProxyString(parseProxyInput("u:p@[2001:db8::1]:8080")), "http://u:p@[2001:db8::1]:8080");
+  // Without a scheme the colons of an IPv6 address and the separators cannot be told apart.
+  assert.throws(() => parseProxyInput("[2001:db8::1]:8080:u:p"), /Invalid proxy URL/);
+});
+
 test("formatProxyString writes a string that parseProxyInput reads back", () => {
   const { formatProxyString, parseProxyInput } = shared();
   const proxy = {
