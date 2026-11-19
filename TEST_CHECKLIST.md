@@ -42,5 +42,5 @@ Use this checklist before submitting to the Chrome Web Store.
 
 ## Packaging
 
-- [ ] `./scripts/build.sh` creates `dist/proxy-switcher.zip` with only runtime files
+- [ ] `./scripts/build.sh` creates `dist/proxy-switcher.zip` with only runtime files and `LICENSE`
 - [ ] No remote scripts and no network requests from extension code

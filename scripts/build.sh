@@ -29,7 +29,8 @@ for path in \
   popup.js \
   icons \
   README.md \
-  PRIVACY.md
+  PRIVACY.md \
+  LICENSE
 do
   copy_path "$path"
 done

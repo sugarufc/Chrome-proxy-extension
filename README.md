@@ -114,3 +114,7 @@ This creates `dist/proxy-switcher.zip` with only runtime files.
 - `STORE_LISTING.md` — Chrome Web Store listing draft
 - `TEST_CHECKLIST.md` — manual test checklist
 - `scripts/build.sh` — ZIP build script
+
+## License
+
+[MIT](LICENSE)
