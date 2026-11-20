@@ -22,7 +22,7 @@ test("manifest version stays in sync with package.json", () => {
   const packageJson = readJson("package.json");
 
   assert.equal(manifest.version, packageJson.version);
-  assert.equal(manifest.version, "4.1.0");
+  assert.equal(manifest.version, "4.1.1");
 });
 
 test("manifest requires Chrome 108 or newer", () => {

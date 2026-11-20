@@ -1,8 +1,12 @@
 # Release Notes
 
-## 4.1.0
+## 4.1.1
 
 **Release date:** not released yet
+
+- The popup footer links to the developer's website.
+
+## 4.1.0
 
 - **Safer:** if another extension or a policy takes over Chrome's proxy settings, the proxy turns off, the popup
   says why, and the password is no longer sent to proxy logins.
@@ -12,7 +16,6 @@
 - **Sturdier:** a Chrome call that never answers fails after 10 seconds instead of blocking every later command.
 - **New:** the popup follows the system dark theme, and screen readers announce status changes.
 - The extension is now licensed under MIT.
-- The popup footer links to the developer's website.
 
 ## 4.0.0
 
